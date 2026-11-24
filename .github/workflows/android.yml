@@ -2,6 +2,8 @@ name: Build 4LOV Android
 
 on:
   push:
+    branches: [main, redesign/compact-home]
+  pull_request:
     branches: [main]
   pull_request:
     branches: [main]

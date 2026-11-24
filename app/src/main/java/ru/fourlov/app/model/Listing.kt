@@ -12,6 +12,7 @@ data class Listing(
     val photos: List<String>,
     val createdAt: String,
     val publishedAt: String,
+    val address: String? = null,
     val contactName: String? = null,
     val contactMethod: String? = null,
     val contactValue: String? = null

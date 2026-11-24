@@ -85,6 +85,7 @@ class ListingRepository {
             photos = photos,
             createdAt = optString("created_at"),
             publishedAt = optString("published_at"),
+            address = optString("address").takeIf { it.isNotBlank() && it != "null" },
             contactName = optString("contact_name").takeIf { it.isNotBlank() && it != "null" },
             contactMethod = optString("contact_method").takeIf { it.isNotBlank() && it != "null" },
             contactValue = optString("contact_value").takeIf { it.isNotBlank() && it != "null" }

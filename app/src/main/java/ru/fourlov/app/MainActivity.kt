@@ -144,8 +144,8 @@ private fun FourLovApp() {
                     tab = AppTab.SEARCH
                 },
                 onSearch = { tab = AppTab.SEARCH },
-                country = country,
-                listings = filteredListings,
+                country = "Россия и Беларусь",
+                listings = listings,
                 isLoading = isLoading,
                 error = loadError,
                 onRetry = ::refreshListings,
@@ -495,7 +495,12 @@ private fun EmptyState(title: String, message: String) {
 
 @Composable
 private fun PublishInfoScreen(modifier: Modifier) {
-    Column(modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    val context = LocalContext.current
+    Column(
+        modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
         Box(Modifier.size(68.dp).clip(CircleShape).background(GreenPale), contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Add, null, tint = Green, modifier = Modifier.size(34.dp))
         }
@@ -503,8 +508,22 @@ private fun PublishInfoScreen(modifier: Modifier) {
         Text("Новое объявление", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Форму публикации подключим к существующей логике 4LOV. Пока не будем показывать форму, которая не может отправить объявление.",
+            "Заполни форму на сайте 4LOV. Объявление отправится на обычную проверку перед публикацией.",
             textAlign = TextAlign.Center, color = TextSecondary, fontSize = 13.sp, lineHeight = 20.sp
         )
+        Spacer(Modifier.height(18.dp))
+        Button(
+            onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://4lov.ru/create.php"))
+                runCatching { context.startActivity(intent) }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Green),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Открыть форму публикации")
+        }
     }
 }

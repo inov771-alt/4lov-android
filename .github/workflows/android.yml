@@ -2,7 +2,7 @@ name: Build 4LOV Android
 
 on:
   push:
-    branches: [main]
+    branches: [main, redesign/compact-home]
   pull_request:
     branches: [main]
   workflow_dispatch:

@@ -1,6 +1,8 @@
 package ru.fourlov.app
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -25,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -404,6 +407,7 @@ private fun ListingDialog(
                 Text(listing.description, color = TextPrimary)
                 Text("${listing.categoryName} · ${listing.subcategoryName}", color = GreenDark, fontSize = 12.sp)
                 Text(listing.city, color = TextSecondary, fontSize = 12.sp)
+                listing.address?.let { Text(it, color = TextSecondary, fontSize = 12.sp) }
                 if (isLoading) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CircularProgressIndicator(color = Green, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -425,8 +429,36 @@ private fun ListingDialog(
                     }
                     Text("Способ связи: $method", color = TextSecondary, fontSize = 12.sp)
                 }
-                listing.contactValue?.let {
-                    Text(it, color = GreenDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                listing.contactValue?.let { value ->
+                    val context = LocalContext.current
+                    val method = listing.contactMethod.orEmpty().lowercase()
+                    val target = when (method) {
+                        "phone", "телефон" -> "tel:${value.filter { it.isDigit() || it == '+' }}"
+                        "email", "почта" -> "mailto:$value"
+                        "telegram" -> if (value.startsWith("http")) value else "https://t.me/${value.removePrefix("@")}"
+                        "max" -> if (value.startsWith("http")) value else "https://max.ru/$value"
+                        else -> null
+                    }
+                    if (target != null) {
+                        Button(
+                            onClick = {
+                                val action = if (method == "phone" || method == "телефон") Intent.ACTION_DIAL else Intent.ACTION_VIEW
+                                runCatching { context.startActivity(Intent(action, Uri.parse(target))) }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Green),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(when (method) {
+                                "phone", "телефон" -> "Позвонить"
+                                "email", "почта" -> "Написать на почту"
+                                "telegram" -> "Открыть Telegram"
+                                "max" -> "Открыть MAX"
+                                else -> value
+                            })
+                        }
+                    } else {
+                        Text(value, color = GreenDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         },

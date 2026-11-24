@@ -11,5 +11,8 @@ data class Listing(
     val subcategoryName: String,
     val photos: List<String>,
     val createdAt: String,
-    val publishedAt: String
+    val publishedAt: String,
+    val contactName: String? = null,
+    val contactMethod: String? = null,
+    val contactValue: String? = null
 )

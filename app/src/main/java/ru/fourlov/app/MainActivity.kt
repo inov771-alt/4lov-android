@@ -54,8 +54,22 @@ private fun FourLovApp() {
     var isLoading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var openedListing by remember { mutableStateOf<Listing?>(null) }
+    var isDetailLoading by remember { mutableStateOf(false) }
+    var detailError by remember { mutableStateOf<String?>(null) }
     val repository = remember { ListingRepository() }
     val scope = rememberCoroutineScope()
+
+    fun openListing(listing: Listing) {
+        openedListing = listing
+        isDetailLoading = true
+        detailError = null
+        scope.launch {
+            repository.loadListing(listing.id)
+                .onSuccess { openedListing = it }
+                .onFailure { detailError = it.message ?: "Не удалось загрузить объявление" }
+            isDetailLoading = false
+        }
+    }
 
     fun refreshListings() {
         scope.launch {
@@ -81,7 +95,12 @@ private fun FourLovApp() {
     }
 
     if (openedListing != null) {
-        ListingDialog(listing = openedListing!!, onDismiss = { openedListing = null })
+        ListingDialog(
+            listing = openedListing!!,
+            isLoading = isDetailLoading,
+            error = detailError,
+            onDismiss = { openedListing = null }
+        )
     }
 
     Scaffold(
@@ -127,7 +146,7 @@ private fun FourLovApp() {
                 isLoading = isLoading,
                 error = loadError,
                 onRetry = ::refreshListings,
-                onListing = { openedListing = it }
+                onListing = ::openListing
             )
             AppTab.SEARCH -> SearchScreen(
                 modifier = Modifier.padding(padding),
@@ -141,7 +160,7 @@ private fun FourLovApp() {
                 isLoading = isLoading,
                 error = loadError,
                 onRetry = ::refreshListings,
-                onListing = { openedListing = it }
+                onListing = ::openListing
             )
             AppTab.PUBLISH -> PublishInfoScreen(Modifier.padding(padding))
         }
@@ -369,7 +388,12 @@ private fun SearchScreen(
 }
 
 @Composable
-private fun ListingDialog(listing: Listing, onDismiss: () -> Unit) {
+private fun ListingDialog(
+    listing: Listing,
+    isLoading: Boolean,
+    error: String?,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(listing.title, fontWeight = FontWeight.Bold) },
@@ -380,6 +404,30 @@ private fun ListingDialog(listing: Listing, onDismiss: () -> Unit) {
                 Text(listing.description, color = TextPrimary)
                 Text("${listing.categoryName} · ${listing.subcategoryName}", color = GreenDark, fontSize = 12.sp)
                 Text(listing.city, color = TextSecondary, fontSize = 12.sp)
+                if (isLoading) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(color = Green, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("Загружаем контакты…", color = TextSecondary, fontSize = 12.sp)
+                    }
+                }
+                if (error != null) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+                listing.contactName?.let {
+                    Text("Контакт: $it", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+                listing.contactMethod?.let {
+                    val method = when (it.lowercase()) {
+                        "phone", "телефон" -> "Телефон"
+                        "email", "почта" -> "Электронная почта"
+                        "telegram" -> "Telegram"
+                        else -> it
+                    }
+                    Text("Способ связи: $method", color = TextSecondary, fontSize = 12.sp)
+                }
+                listing.contactValue?.let {
+                    Text(it, color = GreenDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },

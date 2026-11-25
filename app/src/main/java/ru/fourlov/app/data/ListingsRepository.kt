@@ -9,13 +9,18 @@ import org.json.JSONObject
 import ru.fourlov.app.model.Listing
 import java.util.concurrent.TimeUnit
 
+data class ListingsPage(val items: List<Listing>, val totalCount: Int)
+
 class ListingsRepository {
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS).build()
 
-    suspend fun loadListings(): Result<List<Listing>> = withContext(Dispatchers.IO) {
+    suspend fun loadListings(page: Int = 1, pageSize: Int = 50): Result<ListingsPage> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = Request.Builder().url(ApiConfig.BASE_URL + "api/listings.php?limit=50")
+            val safePage = page.coerceAtLeast(1)
+            val safeLimit = pageSize.coerceIn(1, 50)
+            val offset = (safePage - 1) * safeLimit
+            val request = Request.Builder().url(ApiConfig.BASE_URL + "api/listings.php?limit=$safeLimit&offset=$offset")
                 .header("Accept", "application/json").get().build()
             client.newCall(request).execute().use { response ->
                 check(response.isSuccessful) { "Сервер ответил: HTTP ${response.code}" }
@@ -32,7 +37,7 @@ class ListingsRepository {
                     is JSONObject -> JSONArray().put(payload)
                     else -> root.optJSONArray("listings") ?: JSONArray()
                 }
-                buildList {
+                val items = buildList {
                     for (i in 0 until array.length()) {
                         val item = array.optJSONObject(i) ?: continue
                         val photos = mutableListOf<String>()
@@ -60,6 +65,7 @@ class ListingsRepository {
                         ))
                     }
                 }
+                ListingsPage(items, root.optInt("count", root.optInt("total", items.size)))
             }
         }
     }

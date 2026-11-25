@@ -145,7 +145,7 @@ private fun FourLovApp() {
                     onCategory = { page = 1; stack.add(HomeRoute.CategoryLevel(it)) },
                     onAll = { page = 1; stack.add(HomeRoute.ListingsLevel(null)) },
                     onSearch = { page = 1; tab = AppTab.SEARCH }, onRefresh = { refresh() })
-                is HomeRoute.CategoryLevel -> CategoryScreen(Modifier.padding(padding), route.category, listings, loading, error,
+                is HomeRoute.CategoryLevel -> CategoryScreen(Modifier.padding(padding), route.category, listings, loading, error, page, { page = it },
                     onSubcategory = { page = 1; stack.add(HomeRoute.ListingsLevel(route.category, it)) },
                     onAll = { page = 1; stack.add(HomeRoute.ListingsLevel(route.category)) }, onRefresh = { refresh() })
                 is HomeRoute.ListingsLevel -> ListingsScreen(Modifier.padding(padding),
@@ -272,7 +272,8 @@ private fun HomeScreen(modifier: Modifier, listings: List<Listing>, loading: Boo
             error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
             listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "Опубликованные объявления 4lov.ru появятся здесь.", onRefresh) }
             else -> {
-                items(visibleListings, key = { it.id }) { ListingCard(it) }
+                item { PageNavigation(page, totalPages, onPage) }
+                items(visibleListings, key = { "home-${it.id}" }) { ListingCard(it) }
                 item { PageNavigation(page, totalPages, onPage) }
             }
         }
@@ -281,7 +282,10 @@ private fun HomeScreen(modifier: Modifier, listings: List<Listing>, loading: Boo
 
 @Composable
 private fun CategoryScreen(modifier: Modifier, category: Category, listings: List<Listing>,
-    loading: Boolean, error: String?, onSubcategory: (String) -> Unit, onAll: () -> Unit, onRefresh: () -> Unit) {
+    loading: Boolean, error: String?, page: Int, onPage: (Int) -> Unit,
+    onSubcategory: (String) -> Unit, onAll: () -> Unit, onRefresh: () -> Unit) {
+    val categoryListings = filterListings(listings, "", "", category, null)
+    val visibleListings = pageSlice(categoryListings, page)
     val children = listings.filter { item ->
         if (category.slug == "together") item.categoryName.contains("вмест", true) || item.categoryName.equals("together", true)
         else item.categoryName.contains(category.title, true) || item.categoryName.equals(category.slug, true) ||
@@ -309,6 +313,17 @@ private fun CategoryScreen(modifier: Modifier, category: Category, listings: Lis
                 Text("Все объявления раздела")
             }
         }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Объявления раздела", Modifier.weight(1f), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text("${categoryListings.size}", color = TextSecondary, fontSize = 12.sp)
+            }
+        }
+        if (categoryListings.isNotEmpty()) {
+            item { PageNavigation(page, pageCount(categoryListings.size), onPage) }
+            items(visibleListings, key = { "category-${it.id}" }) { ListingCard(it) }
+            item { PageNavigation(page, pageCount(categoryListings.size), onPage) }
+        }
     }
 }
 
@@ -330,7 +345,8 @@ private fun ListingsScreen(modifier: Modifier, listings: List<Listing>, title: S
             error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
             listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "В этом разделе пока нет опубликованных объявлений.", onRefresh) }
             else -> {
-                items(visibleListings, key = { it.id }) { ListingCard(it) }
+                item { PageNavigation(page, totalPages, onPage) }
+                items(visibleListings, key = { "list-${it.id}" }) { ListingCard(it) }
                 item { PageNavigation(page, totalPages, onPage) }
             }
         }
@@ -403,7 +419,8 @@ private fun SearchScreen(modifier: Modifier, query: String, onQuery: (String) ->
             error != null && listings.isEmpty() -> item { InfoPanel("Ошибка загрузки", error, onRefresh) }
             listings.isEmpty() -> item { Text("Ничего не найдено", color = TextSecondary) }
             else -> {
-                items(visibleListings, key = { it.id }) { ListingCard(it) }
+                item { PageNavigation(page, totalPages, onPage) }
+                items(visibleListings, key = { "search-${it.id}" }) { ListingCard(it) }
                 item { PageNavigation(page, totalPages, onPage) }
             }
         }

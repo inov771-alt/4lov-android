@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(12), 0, 0, 0)
         }
         brand.addView(TextView(this).apply {
-            text = "4LOV"
+            text = "ForLove"
             textSize = 19f
             setTextColor(Color.rgb(36, 66, 48))
             typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.BOLD)
@@ -112,6 +112,15 @@ class MainActivity : ComponentActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 applySitePresentation()
+                if (url != null) {
+                    val selectedTab = when {
+                        url.contains("create.php", ignoreCase = true) -> 2
+                        url.contains("#listings", ignoreCase = true) ||
+                            url.contains("listing.php", ignoreCase = true) -> 1
+                        else -> 0
+                    }
+                    updateTabs(selectedTab)
+                }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

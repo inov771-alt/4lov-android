@@ -2,13 +2,19 @@ package ru.fourlov.app
 
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
+import android.webkit.ValueCallback
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -46,6 +52,8 @@ private enum class Screen { HOME, DETAIL, PUBLISH }
 
 class MainActivity : ComponentActivity() {
     private lateinit var web: WebView
+    private lateinit var photoPicker: ActivityResultLauncher<Intent>
+    private var photoCallback: ValueCallback<Array<Uri>>? = null
     private var publishData: ((List<Listing>, List<Category>) -> Unit)? = null
     private var publishError: (() -> Unit)? = null
     private val homeUrl = "https://4lov.ru/"
@@ -53,6 +61,20 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        photoPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = photoCallback
+            photoCallback = null
+            val data = result.data
+            val uris = if (result.resultCode == RESULT_OK) {
+                val clip = data?.clipData
+                when {
+                    clip != null -> Array(clip.itemCount) { index -> clip.getItemAt(index).uri }
+                    data?.data != null -> arrayOf(data.data!!)
+                    else -> null
+                }
+            } else null
+            callback?.onReceiveValue(uris)
+        }
         window.statusBarColor = Color.rgb(247, 250, 245)
         window.navigationBarColor = Color.WHITE
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -68,6 +90,28 @@ class MainActivity : ComponentActivity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     if (url != null && url.substringBefore("#").trimEnd('/') == "https://4lov.ru") {
                         extractListings()
+                    }
+                }
+            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    photoCallback?.onReceiveValue(null)
+                    photoCallback = filePathCallback
+                    val chooser = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "image/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    return try {
+                        photoPicker.launch(Intent.createChooser(chooser, "Выберите фотографии"))
+                        true
+                    } catch (_: Exception) {
+                        photoCallback = null
+                        false
                     }
                 }
             }
@@ -285,6 +329,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        photoCallback?.onReceiveValue(null)
+        photoCallback = null
         if (::web.isInitialized) { web.stopLoading(); web.destroy() }
         super.onDestroy()
     }

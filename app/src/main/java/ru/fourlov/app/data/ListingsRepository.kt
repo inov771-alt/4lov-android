@@ -34,8 +34,8 @@ class ListingsRepository {
                 val dataObject = payload as? JSONObject
                 val array = when (payload) {
                     is JSONArray -> payload
-                    is JSONObject -> dataObject.optJSONArray("items")
-                        ?: dataObject.optJSONArray("listings")
+                    is JSONObject -> payload.optJSONArray("items")
+                        ?: payload.optJSONArray("listings")
                         ?: dataObject.optJSONArray("results")
                         ?: JSONArray().put(payload)
                     else -> root.optJSONArray("listings")

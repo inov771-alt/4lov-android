@@ -101,7 +101,7 @@ class MainActivity : ComponentActivity() {
             }
 
             MaterialTheme(colorScheme = lightColorScheme(primary = Green, background = Background, surface = UiColor.White)) {
-                Column(Modifier.fillMaxSize().background(Background)) {
+                Column(Modifier.fillMaxSize().background(Background).statusBarsPadding()) {
                     Row(
                         Modifier.fillMaxWidth().background(UiColor.White).padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -236,7 +236,7 @@ class MainActivity : ComponentActivity() {
                 const href = card.getAttribute('data-url') || '';
                 const title = card.querySelector('.listing-title')?.textContent?.trim() || '';
                 return {
-                  id: (href.match(/[?&]id=(d+)/) || [,''])[1],
+                  id: (href.match(/[?&]id=([0-9]+)/) || [,''])[1],
                   title: title,
                   city: card.querySelector('.listing-city')?.textContent?.trim() || '',
                   date: card.querySelector('.listing-meta span:last-child')?.textContent?.trim() || '',

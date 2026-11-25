@@ -71,7 +71,7 @@ private fun FourLovApp() {
         scope.launch {
             loading = true
             error = null
-            repository.loadListings(1, 5000).onSuccess {
+            repository.loadListings(1, 50).onSuccess {
                 listings = it.items
                 totalCount = maxOf(it.totalCount, it.items.size)
                 page = targetPage.coerceIn(1, pageCount(totalCount))
@@ -260,7 +260,7 @@ private fun filterListings(source: List<Listing>, query: String, country: String
 private fun HomeScreen(modifier: Modifier, listings: List<Listing>, totalCount: Int, loading: Boolean, error: String?,
     page: Int, onPage: (Int) -> Unit, onCategory: (Category) -> Unit, onAll: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit) {
     val totalPages = pageCount(totalCount)
-    val visibleListings = pageSlice(listings, page)
+    val visibleListings = listings.take(50)
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -299,9 +299,7 @@ private fun HomeScreen(modifier: Modifier, listings: List<Listing>, totalCount: 
             error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
             listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "Опубликованные объявления 4lov.ru появятся здесь.", onRefresh) }
             else -> {
-                item { PageNavigation(page, totalPages, onPage) }
                 items(visibleListings, key = { "home-${it.id}" }) { ListingCard(it) }
-                item { PageNavigation(page, totalPages, onPage) }
             }
         }
     }

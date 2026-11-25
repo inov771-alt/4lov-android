@@ -1,239 +1,263 @@
 package ru.fourlov.app
 
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddCircleOutline
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import ru.fourlov.app.model.Category
-import ru.fourlov.app.model.categories
-import ru.fourlov.app.ui.theme.*
+import androidx.activity.OnBackPressedCallback
 
+/**
+ * 4LOV Android shell.
+ *
+ * All listing/category/detail/publication data is rendered by the live 4lov.ru
+ * PHP application. This deliberately avoids a second, incomplete API contract
+ * and never substitutes demo listings for real server data.
+ */
 class MainActivity : ComponentActivity() {
+    private lateinit var webView: WebView
+    private lateinit var progress: ProgressBar
+    private lateinit var homeTab: TextView
+    private lateinit var searchTab: TextView
+    private lateinit var publishTab: TextView
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+
+    private val homeUrl = "https://4lov.ru/"
+    private val searchUrl = "https://4lov.ru/#listings"
+    private val publishUrl = "https://4lov.ru/create.php"
+
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { FourLovTheme { FourLovApp() } }
-    }
-}
+        window.statusBarColor = Color.rgb(247, 250, 245)
+        window.navigationBarColor = Color.WHITE
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
 
-private enum class AppTab { HOME, SEARCH, PUBLISH }
-
-@Composable
-private fun FourLovApp() {
-    var tab by remember { mutableStateOf(AppTab.HOME) }
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var searchText by remember { mutableStateOf("") }
-    var country by remember { mutableStateOf("Россия") }
-
-    Scaffold(
-        containerColor = Background,
-        bottomBar = {
-            NavigationBar(containerColor = SurfaceWhite) {
-                NavigationBarItem(
-                    selected = tab == AppTab.HOME,
-                    onClick = { tab = AppTab.HOME },
-                    icon = { Icon(Icons.Default.Home, null) },
-                    label = { Text("Главная") }
-                )
-                NavigationBarItem(
-                    selected = tab == AppTab.SEARCH,
-                    onClick = { tab = AppTab.SEARCH },
-                    icon = { Icon(Icons.Default.Search, null) },
-                    label = { Text("Поиск") }
-                )
-                NavigationBarItem(
-                    selected = tab == AppTab.PUBLISH,
-                    onClick = { tab = AppTab.PUBLISH },
-                    icon = { Icon(Icons.Default.AddCircleOutline, null) },
-                    label = { Text("Разместить") }
-                )
-            }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(247, 250, 245))
         }
-    ) { padding ->
-        when (tab) {
-            AppTab.HOME -> HomeScreen(
-                modifier = Modifier.padding(padding),
-                selectedCategory = selectedCategory,
-                onCategory = { selectedCategory = if (selectedCategory == it) null else it },
-                onSearch = { tab = AppTab.SEARCH }
-            )
-            AppTab.SEARCH -> SearchScreen(
-                modifier = Modifier.padding(padding),
-                query = searchText,
-                onQuery = { searchText = it },
-                country = country,
-                onCountry = { country = it },
-                category = selectedCategory,
-                onCategory = { selectedCategory = it }
-            )
-            AppTab.PUBLISH -> PublishInfoScreen(Modifier.padding(padding))
-        }
-    }
-}
 
-@Composable
-private fun HomeScreen(
-    modifier: Modifier,
-    selectedCategory: Category?,
-    onCategory: (Category) -> Unit,
-    onSearch: () -> Unit
-) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(48.dp).background(Green, RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center
-                ) { Text("4♡", color = SurfaceWhite, fontSize = 23.sp, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text("4LOV", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text("Пространство взаимопомощи", color = TextSecondary, fontSize = 12.sp)
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            setBackgroundColor(Color.WHITE)
+        }
+
+        val mark = TextView(this).apply {
+            text = "4♡"
+            textSize = 23f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.rgb(43, 145, 91))
+            typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
+        }
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }
+        brand.addView(TextView(this).apply {
+            text = "4LOV"
+            textSize = 19f
+            setTextColor(Color.rgb(36, 66, 48))
+            typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.BOLD)
+        })
+        brand.addView(TextView(this).apply {
+            text = "Делимся добром"
+            textSize = 12f
+            setTextColor(Color.rgb(112, 133, 117))
+        })
+        header.addView(mark)
+        header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(header)
+
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true
+            visibility = View.GONE
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(43, 145, 91))
+        }
+        root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
+
+        val webContainer = FrameLayout(this).apply {
+            setBackgroundColor(Color.rgb(247, 250, 245))
+        }
+        webView = WebView(this)
+        webView.setBackgroundColor(Color.rgb(247, 250, 245))
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        webView.settings.loadsImagesAutomatically = true
+        webView.settings.javaScriptCanOpenWindowsAutomatically = false
+        webView.settings.allowFileAccess = false
+        webView.settings.allowContentAccess = true
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val uri = request.url
+                if (uri.scheme == "https" && uri.host == "4lov.ru") return false
+                if (uri.scheme == "http" && uri.host == "4lov.ru") {
+                    view.loadUrl(uri.buildUpon().scheme("https").build().toString())
+                    return true
+                }
+                return try {
+                    startActivity(Intent(Intent.ACTION_VIEW, uri))
+                    true
+                } catch (_: ActivityNotFoundException) {
+                    true
                 }
             }
         }
-        item {
-            Column(
-                modifier = Modifier.fillMaxWidth().background(GreenPale, RoundedCornerShape(24.dp)).padding(20.dp)
-            ) {
-                Text("Добро начинается рядом", fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold, color = GreenDark)
-                Spacer(Modifier.height(8.dp))
-                Text("Отдай то, что не нужно. Найди то, что важно. Помоги тем, кому нужна поддержка.", color = TextPrimary, lineHeight = 21.sp)
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = onSearch, shape = RoundedCornerShape(14.dp)) {
-                    Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Найти объявление")
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                progress.progress = newProgress
+                progress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                fileChooserCallback?.onReceiveValue(null)
+                fileChooserCallback = filePathCallback
+                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                }
+                return try {
+                    startActivityForResult(Intent.createChooser(intent, "Выберите фотографии"), FILE_CHOOSER_REQUEST)
+                    true
+                } catch (_: ActivityNotFoundException) {
+                    fileChooserCallback = null
+                    false
                 }
             }
         }
-        item { Text("Выбери направление", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
-        items(categories.size) { index ->
-            val category = categories[index]
-            CategoryRow(category, selectedCategory == category) { onCategory(category) }
+
+        webContainer.addView(webView, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+        root.addView(webContainer, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.WHITE)
+            elevation = dp(10).toFloat()
+            setPadding(dp(8), dp(7), dp(8), dp(7))
         }
-        item {
-            Column(
-                modifier = Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(20.dp)).padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(Icons.Default.FavoriteBorder, null, tint = Green, modifier = Modifier.size(28.dp))
-                Spacer(Modifier.height(8.dp))
-                Text("Объявления появятся после подключения сервера", fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(4.dp))
-                Text("Сейчас мы настраиваем связь приложения с 4lov.ru. Никаких вымышленных объявлений здесь нет.", color = TextSecondary, textAlign = TextAlign.Center, fontSize = 13.sp)
+        homeTab = navItem("⌂", "Главная")
+        searchTab = navItem("⌕", "Поиск")
+        publishTab = navItem("+", "Разместить")
+        listOf(homeTab, searchTab, publishTab).forEach { item ->
+            nav.addView(item, LinearLayout.LayoutParams(0, dp(54), 1f))
+        }
+        homeTab.setOnClickListener { open(homeUrl, 0) }
+        searchTab.setOnClickListener { open(searchUrl, 1) }
+        publishTab.setOnClickListener { open(publishUrl, 2) }
+        root.addView(nav)
+
+        setContentView(root)
+        updateTabs(0)
+
+        if (savedInstanceState == null) {
+            webView.loadUrl(homeUrl)
+        } else {
+            webView.restoreState(savedInstanceState)
+        }
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webView.canGoBack()) webView.goBack() else finish()
             }
+        })
+    }
+
+    private fun navItem(symbol: String, label: String): TextView {
+        return TextView(this).apply {
+            text = "$symbol\n$label"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(112, 133, 117))
+            typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.NORMAL)
         }
     }
-}
 
-@Composable
-private fun CategoryRow(category: Category, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .background(if (selected) GreenPale else SurfaceWhite, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.size(48.dp).background(if (selected) SurfaceWhite else Background, CircleShape),
-            contentAlignment = Alignment.Center
-        ) { Text(category.symbol, fontSize = 23.sp) }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(category.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = TextPrimary)
-            Text(category.subtitle, fontSize = 12.sp, color = TextSecondary)
-        }
-        Text(if (selected) "✓" else "›", color = Green, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun SearchScreen(
-    modifier: Modifier,
-    query: String,
-    onQuery: (String) -> Unit,
-    country: String,
-    onCountry: (String) -> Unit,
-    category: Category?,
-    onCategory: (Category?) -> Unit
-) {
-    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Поиск объявлений", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQuery,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Что ищем?") },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            shape = RoundedCornerShape(16.dp),
-            singleLine = true
+    private fun open(url: String, selected: Int) {
+        updateTabs(selected)
+        if (webView.url != url) webView.loadUrl(url)
+        else if (selected == 1) webView.evaluateJavascript(
+            "document.getElementById('searchInput')?.focus();", null
         )
-        Text("Страна", fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilterChip(selected = country == "Россия", onClick = { onCountry("Россия") }, label = { Text("Россия") })
-            FilterChip(selected = country == "Беларусь", onClick = { onCountry("Беларусь") }, label = { Text("Беларусь") })
+    }
+
+    private fun updateTabs(selected: Int) {
+        val items = listOf(homeTab, searchTab, publishTab)
+        items.forEachIndexed { index, item ->
+            item.setTextColor(if (index == selected) Color.rgb(36, 132, 78) else Color.rgb(112, 133, 117))
+            item.typeface = android.graphics.Typeface.create(
+                "sans-serif-rounded",
+                if (index == selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
+            )
         }
-        Text("Категория", fontWeight = FontWeight.SemiBold)
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            categories.forEach { item ->
-                FilterChip(
-                    selected = category == item,
-                    onClick = { onCategory(if (category == item) null else item) },
-                    label = { Text("${item.symbol}  ${item.title}") }
-                )
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != FILE_CHOOSER_REQUEST) return
+
+        val callback = fileChooserCallback ?: return
+        fileChooserCallback = null
+        val results = if (resultCode == Activity.RESULT_OK) {
+            val clip = data?.clipData
+            when {
+                clip != null -> Array(clip.itemCount) { index -> clip.getItemAt(index).uri }
+                data?.data != null -> arrayOf(data.data!!)
+                else -> null
             }
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Фильтры готовы. Получение результатов будет включено после подключения к фактическим методам API.",
-            color = TextSecondary,
-            fontSize = 13.sp
-        )
+        } else null
+        callback.onReceiveValue(results)
     }
-}
 
-@Composable
-private fun PublishInfoScreen(modifier: Modifier) {
-    Column(
-        modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(Modifier.size(72.dp).background(GreenPale, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.AddCircleOutline, null, tint = Green, modifier = Modifier.size(36.dp))
-        }
-        Spacer(Modifier.height(18.dp))
-        Text("Разместить объявление", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Форму публикации подключим к существующей серверной логике 4LOV. До проверки реального API отправка не имитируется.",
-            textAlign = TextAlign.Center,
-            color = TextSecondary,
-            lineHeight = 21.sp
-        )
+    override fun onSaveInstanceState(outState: Bundle) {
+        webView.saveState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        fileChooserCallback?.onReceiveValue(null)
+        webView.stopLoading()
+        webView.destroy()
+        super.onDestroy()
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private const val FILE_CHOOSER_REQUEST = 4107
     }
 }

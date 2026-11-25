@@ -51,7 +51,7 @@ private fun FourLovApp() {
 
     BackHandler(enabled = tab == AppTab.HOME && homePage != HomePage.ROOT) {
         homePage = when (homePage) {
-            HomePage.LISTINGS -> if (selectedCategory?.subcategories?.isNotEmpty() == true) HomePage.SUBCATEGORIES else HomePage.ROOT
+            HomePage.LISTINGS -> HomePage.SUBCATEGORIES
             HomePage.SUBCATEGORIES -> HomePage.ROOT
             HomePage.ROOT -> HomePage.ROOT
         }
@@ -109,7 +109,7 @@ private fun FourLovApp() {
                     category = selectedCategory,
                     subcategory = selectedSubcategory,
                     onBack = {
-                        homePage = if (selectedCategory?.subcategories?.isNotEmpty() == true) HomePage.SUBCATEGORIES else HomePage.ROOT
+                        homePage = HomePage.SUBCATEGORIES
                     }
                 )
             }

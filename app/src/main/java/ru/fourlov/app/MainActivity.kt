@@ -71,7 +71,7 @@ private fun FourLovApp() {
         scope.launch {
             loading = true
             error = null
-            repository.loadListings(1, 50).onSuccess {
+            repository.loadListings(1, 5000).onSuccess {
                 listings = it.items
                 totalCount = maxOf(it.totalCount, it.items.size)
                 page = targetPage.coerceIn(1, pageCount(totalCount))
@@ -168,7 +168,7 @@ private fun FourLovApp() {
 }
 
 
-private const val LISTINGS_PER_PAGE = 50
+private const val LISTINGS_PER_PAGE = 20
 
 private fun pageCount(totalItems: Int): Int =
     maxOf(1, (totalItems + LISTINGS_PER_PAGE - 1) / LISTINGS_PER_PAGE)
@@ -183,7 +183,15 @@ private fun <T> pageSlice(items: List<T>, page: Int): List<T> {
 private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> Unit) {
     if (totalPages <= 1) return
     val safePage = currentPage.coerceIn(1, totalPages)
-    val visiblePages = (1..totalPages).toList()
+    val visiblePages = buildList {
+        add(1)
+        if (safePage > 3) add(-1)
+        val start = maxOf(2, safePage - 1)
+        val end = minOf(totalPages - 1, safePage + 1)
+        for (number in start..end) add(number)
+        if (safePage < totalPages - 2) add(-1)
+        if (totalPages > 1) add(totalPages)
+    }.distinct()
 
     Column(
         Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -195,8 +203,10 @@ private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> U
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            PageControl("«", Modifier.weight(1f), safePage > 1) { onPage(1) }
             PageControl("‹", Modifier.weight(1f), safePage > 1) { onPage(safePage - 1) }
             PageControl("›", Modifier.weight(1f), safePage < totalPages) { onPage(safePage + 1) }
+            PageControl("»", Modifier.weight(1f), safePage < totalPages) { onPage(totalPages) }
         }
         Spacer(Modifier.height(8.dp))
         FlowRow(
@@ -205,8 +215,12 @@ private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> U
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             visiblePages.forEach { number ->
-                PageControl(number.toString(), Modifier.width(34.dp), true,
-                    selected = number == safePage) { onPage(number) }
+                if (number < 0) {
+                    Text("…", Modifier.padding(horizontal = 5.dp, vertical = 9.dp), color = TextSecondary)
+                } else {
+                    PageControl(number.toString(), Modifier.width(38.dp), true,
+                        selected = number == safePage) { onPage(number) }
+                }
             }
         }
     }
@@ -299,7 +313,9 @@ private fun HomeScreen(modifier: Modifier, listings: List<Listing>, totalCount: 
             error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
             listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "Опубликованные объявления 4lov.ru появятся здесь.", onRefresh) }
             else -> {
+                item { PageNavigation(page, totalPages, onPage) }
                 items(visibleListings, key = { "home-${it.id}" }) { ListingCard(it) }
+                item { PageNavigation(page, totalPages, onPage) }
             }
         }
     }

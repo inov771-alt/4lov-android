@@ -23,6 +23,8 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 /**
  * 4LOV Android shell.
@@ -182,6 +184,15 @@ class MainActivity : ComponentActivity() {
         root.addView(nav)
 
         setContentView(root)
+        // Android 15 enforces edge-to-edge for modern target SDKs. Keep the
+        // app header below the status bar and the bottom navigation above the
+        // system navigation area instead of drawing underneath either one.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, windowInsets ->
+            val systemBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(0, systemBars.top, 0, systemBars.bottom)
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(root)
         updateTabs(0)
 
         if (savedInstanceState == null) {

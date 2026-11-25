@@ -15,7 +15,7 @@ class ListingsRepository {
 
     suspend fun loadListings(): Result<List<Listing>> = withContext(Dispatchers.IO) {
         runCatching {
-            val request = Request.Builder().url(ApiConfig.BASE_URL + "api/listings.php")
+            val request = Request.Builder().url(ApiConfig.BASE_URL + "api/listings.php?limit=50")
                 .header("Accept", "application/json").get().build()
             client.newCall(request).execute().use { response ->
                 check(response.isSuccessful) { "Сервер ответил: HTTP ${response.code}" }

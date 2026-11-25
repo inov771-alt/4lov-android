@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Home
@@ -244,6 +245,11 @@ private fun SearchScreen(
 @Composable
 private fun ListingCard(listing: Listing) {
     Column(Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(18.dp)).padding(16.dp)) {
+        listing.photos.firstOrNull()?.let { photo ->
+            AsyncImage(model = photo, contentDescription = listing.title,
+                modifier = Modifier.fillMaxWidth().height(190.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            Spacer(Modifier.height(10.dp))
+        }
         if (listing.categoryPath.isNotBlank()) {
             Text(listing.categoryPath, color = GreenDark, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))

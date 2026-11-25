@@ -256,7 +256,7 @@ private fun HomeScreen(modifier: Modifier, listings: List<Listing>, totalCount: 
     page: Int, onPage: (Int) -> Unit, onCategory: (Category) -> Unit, onAll: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit) {
     val totalPages = pageCount(totalCount)
     val visibleListings = listings.take(LISTINGS_PER_PAGE)
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp)), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(48.dp).background(Green, RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {

@@ -238,7 +238,7 @@ class MainActivity : ComponentActivity() {
                                         verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         items(shown, key = { it.id }) { item ->
-                                            ListingCard(item) {
+                                            ListingCard(item, categories.firstOrNull { category -> category.slug == item.category }?.label ?: item.categoryLabel()) {
                                                 screen = Screen.DETAIL
                                                 web.loadUrl(item.url)
                                             }
@@ -337,7 +337,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ListingCard(item: Listing, onClick: () -> Unit) {
+private fun ListingCard(item: Listing, categoryLabel: String, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         color = UiColor.White, shape = RoundedCornerShape(18.dp), shadowElevation = 2.dp
@@ -351,7 +351,7 @@ private fun ListingCard(item: Listing, onClick: () -> Unit) {
                 }
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(item.categoryLabel(), color = Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(categoryLabel, color = Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text(item.title, color = Dark, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(7.dp))

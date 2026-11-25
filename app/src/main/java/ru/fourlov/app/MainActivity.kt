@@ -84,7 +84,7 @@ private fun FourLovApp() {
         containerColor = Background,
         topBar = {
             if (tab == AppTab.HOME && route != HomeRoute.Root) {
-                Column(Modifier.fillMaxWidth().background(SurfaceWhite)) {
+                Column(Modifier.fillMaxWidth().statusBarsPadding().background(SurfaceWhite)) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { back() }) { Icon(Icons.Default.ArrowBack, "Назад") }
                         val title = when (route) {
@@ -209,7 +209,7 @@ private fun HomeScreen(modifier: Modifier, listings: List<Listing>, loading: Boo
             loading && listings.isEmpty() -> item { LoadingPanel() }
             error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
             listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "Опубликованные объявления 4lov.ru появятся здесь.", onRefresh) }
-            else -> items(listings.take(8), key = { it.id }) { ListingCard(it) }
+            else -> items(listings, key = { it.id }) { ListingCard(it) }
         }
     }
 }

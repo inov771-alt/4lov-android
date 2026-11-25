@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -56,6 +58,7 @@ private fun FourLovApp() {
     var country by remember { mutableStateOf("Россия") }
     var searchCategory by remember { mutableStateOf<Category?>(null) }
     var listings by remember { mutableStateOf<List<Listing>>(emptyList()) }
+    var page by remember { mutableIntStateOf(1) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val repository = remember { ListingsRepository() }
@@ -137,19 +140,75 @@ private fun FourLovApp() {
         when (tab) {
             AppTab.HOME -> when (route) {
                 HomeRoute.Root -> HomeScreen(Modifier.padding(padding), listings, loading, error,
-                    onCategory = { stack.add(HomeRoute.CategoryLevel(it)) },
-                    onAll = { stack.add(HomeRoute.ListingsLevel(null)) },
+                    page = page, onPage = { page = it },
+                    onCategory = { page = 1; stack.add(HomeRoute.CategoryLevel(it)) },
+                    onAll = { page = 1; stack.add(HomeRoute.ListingsLevel(null)) },
                     onSearch = { tab = AppTab.SEARCH }, onRefresh = { refresh() })
                 is HomeRoute.CategoryLevel -> CategoryScreen(Modifier.padding(padding), route.category, listings, loading, error,
-                    onSubcategory = { stack.add(HomeRoute.ListingsLevel(route.category, it)) },
-                    onAll = { stack.add(HomeRoute.ListingsLevel(route.category)) }, onRefresh = { refresh() })
+                    onSubcategory = { page = 1; stack.add(HomeRoute.ListingsLevel(route.category, it)) },
+                    onAll = { page = 1; stack.add(HomeRoute.ListingsLevel(route.category)) }, onRefresh = { refresh() })
                 is HomeRoute.ListingsLevel -> ListingsScreen(Modifier.padding(padding),
                     filterListings(listings, "", "", route.category, route.subcategory),
-                    route.category?.title ?: "Все объявления", route.subcategory, loading, error, { refresh() })
+                    route.category?.title ?: "Все объявления", route.subcategory, loading, error, page, { page = it }, { refresh() })
             }
-            AppTab.SEARCH -> SearchScreen(Modifier.padding(padding), query, { query = it }, country, { country = it },
-                searchCategory, { searchCategory = it }, searchResults, loading, error, { refresh() })
+            AppTab.SEARCH -> SearchScreen(Modifier.padding(padding), query, { query = it; page = 1 }, country, { country = it; page = 1 },
+                searchCategory, { searchCategory = it; page = 1 }, searchResults, loading, error, page, { page = it }, { refresh() })
             AppTab.PUBLISH -> PublishScreen(Modifier.padding(padding))
+        }
+    }
+}
+
+
+private const val LISTINGS_PER_PAGE = 24
+
+private fun pageCount(totalItems: Int): Int =
+    maxOf(1, (totalItems + LISTINGS_PER_PAGE - 1) / LISTINGS_PER_PAGE)
+
+private fun <T> pageSlice(items: List<T>, page: Int): List<T> {
+    val safePage = page.coerceIn(1, pageCount(items.size))
+    return items.drop((safePage - 1) * LISTINGS_PER_PAGE).take(LISTINGS_PER_PAGE)
+}
+
+@Composable
+private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> Unit) {
+    if (totalPages <= 1) return
+    val safePage = currentPage.coerceIn(1, totalPages)
+    val numbers = buildList<Int?> {
+        add(1)
+        val start = maxOf(2, safePage - 2)
+        val end = minOf(totalPages - 1, safePage + 2)
+        if (start > 2) add(null)
+        for (number in start..end) add(number)
+        if (end < totalPages - 1) add(null)
+        if (totalPages > 1) add(totalPages)
+    }
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Страница $safePage из $totalPages", color = TextSecondary, fontSize = 12.sp)
+        Spacer(Modifier.height(5.dp))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { onPage(1) }, enabled = safePage > 1) { Text("«") }
+            TextButton(onClick = { onPage(safePage - 1) }, enabled = safePage > 1) { Text("‹") }
+            numbers.forEach { number ->
+                if (number == null) {
+                    Text("…", modifier = Modifier.padding(horizontal = 3.dp), color = TextSecondary)
+                } else if (number == safePage) {
+                    Button(
+                        onClick = { onPage(number) },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier.height(36.dp)
+                    ) { Text(number.toString()) }
+                } else {
+                    TextButton(onClick = { onPage(number) }, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp)) {
+                        Text(number.toString())
+                    }
+                }
+            }
+            TextButton(onClick = { onPage(safePage + 1) }, enabled = safePage < totalPages) { Text("›") }
+            TextButton(onClick = { onPage(totalPages) }, enabled = safePage < totalPages) { Text("»") }
         }
     }
 }
@@ -171,7 +230,9 @@ private fun filterListings(source: List<Listing>, query: String, country: String
 
 @Composable
 private fun HomeScreen(modifier: Modifier, listings: List<Listing>, loading: Boolean, error: String?,
-    onCategory: (Category) -> Unit, onAll: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit) {
+    page: Int, onPage: (Int) -> Unit, onCategory: (Category) -> Unit, onAll: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit) {
+    val totalPages = pageCount(listings.size)
+    val visibleListings = pageSlice(listings, page)
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -209,7 +270,10 @@ private fun HomeScreen(modifier: Modifier, listings: List<Listing>, loading: Boo
             loading && listings.isEmpty() -> item { LoadingPanel() }
             error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
             listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "Опубликованные объявления 4lov.ru появятся здесь.", onRefresh) }
-            else -> items(listings, key = { it.id }) { ListingCard(it) }
+            else -> {
+                items(visibleListings, key = { it.id }) { ListingCard(it) }
+                item { PageNavigation(page, totalPages, onPage) }
+            }
         }
     }
 }
@@ -249,7 +313,9 @@ private fun CategoryScreen(modifier: Modifier, category: Category, listings: Lis
 
 @Composable
 private fun ListingsScreen(modifier: Modifier, listings: List<Listing>, title: String, subcategory: String?,
-    loading: Boolean, error: String?, onRefresh: () -> Unit) {
+    loading: Boolean, error: String?, page: Int, onPage: (Int) -> Unit, onRefresh: () -> Unit) {
+    val totalPages = pageCount(listings.size)
+    val visibleListings = pageSlice(listings, page)
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
         item {
             Column {
@@ -262,7 +328,10 @@ private fun ListingsScreen(modifier: Modifier, listings: List<Listing>, title: S
             loading && listings.isEmpty() -> item { LoadingPanel() }
             error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
             listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "В этом разделе пока нет опубликованных объявлений.", onRefresh) }
-            else -> items(listings, key = { it.id }) { ListingCard(it) }
+            else -> {
+                items(visibleListings, key = { it.id }) { ListingCard(it) }
+                item { PageNavigation(page, totalPages, onPage) }
+            }
         }
     }
 }
@@ -295,7 +364,9 @@ private fun NavigationRow(title: String, onClick: () -> Unit) {
 @Composable
 private fun SearchScreen(modifier: Modifier, query: String, onQuery: (String) -> Unit,
     country: String, onCountry: (String) -> Unit, category: Category?, onCategory: (Category?) -> Unit,
-    listings: List<Listing>, loading: Boolean, error: String?, onRefresh: () -> Unit) {
+    listings: List<Listing>, loading: Boolean, error: String?, page: Int, onPage: (Int) -> Unit, onRefresh: () -> Unit) {
+    val totalPages = pageCount(listings.size)
+    val visibleListings = pageSlice(listings, page)
     LazyColumn(modifier.fillMaxSize().padding(horizontal = 18.dp), contentPadding = PaddingValues(top = 20.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("Поиск объявлений", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
@@ -330,7 +401,10 @@ private fun SearchScreen(modifier: Modifier, query: String, onQuery: (String) ->
             loading && listings.isEmpty() -> item { LoadingPanel() }
             error != null && listings.isEmpty() -> item { InfoPanel("Ошибка загрузки", error, onRefresh) }
             listings.isEmpty() -> item { Text("Ничего не найдено", color = TextSecondary) }
-            else -> items(listings, key = { it.id }) { ListingCard(it) }
+            else -> {
+                items(visibleListings, key = { it.id }) { ListingCard(it) }
+                item { PageNavigation(page, totalPages, onPage) }
+            }
         }
     }
 }

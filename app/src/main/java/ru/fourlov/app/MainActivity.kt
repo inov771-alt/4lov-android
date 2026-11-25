@@ -2,6 +2,7 @@ package ru.fourlov.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.fourlov.app.model.Category
+import ru.fourlov.app.model.Subcategory
 import ru.fourlov.app.model.categories
 import ru.fourlov.app.ui.theme.*
 
@@ -35,13 +37,25 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class AppTab { HOME, SEARCH, PUBLISH }
+private enum class HomePage { ROOT, SUBCATEGORIES, LISTINGS }
 
 @Composable
 private fun FourLovApp() {
     var tab by remember { mutableStateOf(AppTab.HOME) }
+    var homePage by remember { mutableStateOf(HomePage.ROOT) }
+    var selectedSubcategory by remember { mutableStateOf<Subcategory?>(null) }
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
     var searchText by remember { mutableStateOf("") }
     var country by remember { mutableStateOf("Россия") }
+
+    BackHandler(enabled = tab == AppTab.HOME && homePage != HomePage.ROOT) {
+        homePage = when (homePage) {
+            HomePage.LISTINGS -> if (selectedCategory?.subcategories?.isNotEmpty() == true) HomePage.SUBCATEGORIES else HomePage.ROOT
+            HomePage.SUBCATEGORIES -> HomePage.ROOT
+            HomePage.ROOT -> HomePage.ROOT
+        }
+        if (homePage == HomePage.ROOT) selectedSubcategory = null
+    }
 
     Scaffold(
         containerColor = Background,
@@ -69,12 +83,35 @@ private fun FourLovApp() {
         }
     ) { padding ->
         when (tab) {
-            AppTab.HOME -> HomeScreen(
-                modifier = Modifier.padding(padding),
-                selectedCategory = selectedCategory,
-                onCategory = { selectedCategory = if (selectedCategory == it) null else it },
-                onSearch = { tab = AppTab.SEARCH }
-            )
+            AppTab.HOME -> when (homePage) {
+                HomePage.ROOT -> HomeScreen(
+                    modifier = Modifier.padding(padding),
+                    onCategory = {
+                        selectedCategory = it
+                        selectedSubcategory = null
+                        homePage = HomePage.SUBCATEGORIES
+                    },
+                    onSearch = { tab = AppTab.SEARCH }
+                )
+                HomePage.SUBCATEGORIES -> SubcategoryScreen(
+                    modifier = Modifier.padding(padding),
+                    category = selectedCategory,
+                    onBack = { homePage = HomePage.ROOT },
+                    onSubcategory = {
+                        selectedSubcategory = it
+                        homePage = HomePage.LISTINGS
+                    },
+                    onAllListings = { homePage = HomePage.LISTINGS }
+                )
+                HomePage.LISTINGS -> ListingsScreen(
+                    modifier = Modifier.padding(padding),
+                    category = selectedCategory,
+                    subcategory = selectedSubcategory,
+                    onBack = {
+                        homePage = if (selectedCategory?.subcategories?.isNotEmpty() == true) HomePage.SUBCATEGORIES else HomePage.ROOT
+                    }
+                )
+            }
             AppTab.SEARCH -> SearchScreen(
                 modifier = Modifier.padding(padding),
                 query = searchText,
@@ -92,7 +129,6 @@ private fun FourLovApp() {
 @Composable
 private fun HomeScreen(
     modifier: Modifier,
-    selectedCategory: Category?,
     onCategory: (Category) -> Unit,
     onSearch: () -> Unit
 ) {
@@ -132,7 +168,7 @@ private fun HomeScreen(
         item { Text("Выбери направление", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
         items(categories.size) { index ->
             val category = categories[index]
-            CategoryRow(category, selectedCategory == category) { onCategory(category) }
+            CategoryRow(category) { onCategory(category) }
         }
         item {
             Column(
@@ -150,16 +186,16 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun CategoryRow(category: Category, selected: Boolean, onClick: () -> Unit) {
+private fun CategoryRow(category: Category, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth()
-            .background(if (selected) GreenPale else SurfaceWhite, RoundedCornerShape(18.dp))
+            .background(SurfaceWhite, RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(48.dp).background(if (selected) SurfaceWhite else Background, CircleShape),
+            modifier = Modifier.size(48.dp).background(Background, CircleShape),
             contentAlignment = Alignment.Center
         ) { Text(category.symbol, fontSize = 23.sp) }
         Spacer(Modifier.width(14.dp))
@@ -167,7 +203,83 @@ private fun CategoryRow(category: Category, selected: Boolean, onClick: () -> Un
             Text(category.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = TextPrimary)
             Text(category.subtitle, fontSize = 12.sp, color = TextSecondary)
         }
-        Text(if (selected) "✓" else "›", color = Green, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("›", color = Green, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun SubcategoryScreen(
+    modifier: Modifier,
+    category: Category?,
+    onBack: () -> Unit,
+    onSubcategory: (Subcategory) -> Unit,
+    onAllListings: () -> Unit
+) {
+    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
+            Text(category?.title ?: "Раздел", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        }
+        if (category?.subcategories.isNullOrEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(20.dp)).padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(category?.symbol ?: "♡", fontSize = 34.sp)
+                Spacer(Modifier.height(10.dp))
+                Text("Подразделы этого раздела", fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Структуру подразделов добавим по фактическому каталогу сайта. Названия пока не придумываем.",
+                    color = TextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            category?.subcategories?.forEach { subcategory ->
+                Row(
+                    Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(16.dp))
+                        .clickable { onSubcategory(subcategory) }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(subcategory.title, modifier = Modifier.weight(1f), color = TextPrimary, fontWeight = FontWeight.Medium)
+                    Text("›", color = Green, fontSize = 24.sp)
+                }
+            }
+        }
+        Button(onClick = onAllListings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+            Text("Показать все объявления раздела")
+        }
+    }
+}
+
+@Composable
+private fun ListingsScreen(
+    modifier: Modifier,
+    category: Category?,
+    subcategory: Subcategory?,
+    onBack: () -> Unit
+) {
+    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
+            Column {
+                Text(category?.title ?: "Объявления", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                if (subcategory != null) Text(subcategory.title, color = TextSecondary, fontSize = 13.sp)
+            }
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(20.dp)).padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Default.FavoriteBorder, null, tint = Green, modifier = Modifier.size(30.dp))
+            Spacer(Modifier.height(10.dp))
+            Text("Пока нет загруженных объявлений", fontWeight = FontWeight.SemiBold, color = TextPrimary)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Экран списка готов к подключению. Объявления появятся после привязки к реальному API сайта.",
+                color = TextSecondary, textAlign = TextAlign.Center, fontSize = 13.sp
+            )
+        }
     }
 }
 

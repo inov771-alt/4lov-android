@@ -71,7 +71,7 @@ private fun FourLovApp() {
         scope.launch {
             loading = true
             error = null
-            repository.loadListings(1, 5000).onSuccess {
+            repository.loadListings().onSuccess {
                 listings = it.items
                 totalCount = maxOf(it.totalCount, it.items.size)
                 page = targetPage.coerceIn(1, pageCount(totalCount))

@@ -1,49 +1,54 @@
 package ru.fourlov.app
 
 import android.annotation.SuppressLint
-import android.app.Activity
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color as UiColor
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import coil.compose.AsyncImage
+import org.json.JSONArray
+import org.json.JSONObject
+import org.json.JSONTokener
 
-/**
- * 4LOV Android shell.
- *
- * All listing/category/detail/publication data is rendered by the live 4lov.ru
- * PHP application. This deliberately avoids a second, incomplete API contract
- * and never substitutes demo listings for real server data.
- */
+private val Green = UiColor(0xFF278B55)
+private val Dark = UiColor(0xFF244230)
+private val Background = UiColor(0xFFF7FAF5)
+private val Grey = UiColor(0xFF718575)
+
+private data class Listing(
+    val id: String, val title: String, val city: String, val date: String,
+    val category: String, val image: String, val url: String, val searchText: String
+)
+private data class Category(val slug: String, val label: String)
+private enum class Screen { HOME, DETAIL, PUBLISH }
+
 class MainActivity : ComponentActivity() {
-    private lateinit var webView: WebView
-    private lateinit var progress: ProgressBar
-    private lateinit var homeTab: TextView
-    private lateinit var searchTab: TextView
-    private lateinit var publishTab: TextView
-    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
-
+    private lateinit var web: WebView
+    private var publishData: ((List<Listing>, List<Category>) -> Unit)? = null
+    private var publishError: (() -> Unit)? = null
     private val homeUrl = "https://4lov.ru/"
-    private val searchUrl = "https://4lov.ru/#listings"
-    private val publishUrl = "https://4lov.ru/create.php"
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,250 +57,295 @@ class MainActivity : ComponentActivity() {
         window.navigationBarColor = Color.WHITE
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        web = WebView(this).apply {
             setBackgroundColor(Color.rgb(247, 250, 245))
-        }
-
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(10), dp(18), dp(10))
-            setBackgroundColor(Color.WHITE)
-        }
-
-        val mark = TextView(this).apply {
-            text = "4♡"
-            textSize = 23f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(43, 145, 91))
-            typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
-        }
-        val brand = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
-        }
-        brand.addView(TextView(this).apply {
-            text = "ForLove"
-            textSize = 19f
-            setTextColor(Color.rgb(36, 66, 48))
-            typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.BOLD)
-        })
-        header.addView(mark)
-        header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(header)
-
-        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = true
-            visibility = View.GONE
-            progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(43, 145, 91))
-        }
-        root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
-
-        val webContainer = FrameLayout(this).apply {
-            setBackgroundColor(Color.rgb(247, 250, 245))
-        }
-        webView = WebView(this)
-        webView.setBackgroundColor(Color.rgb(247, 250, 245))
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.settings.loadsImagesAutomatically = true
-        webView.settings.javaScriptCanOpenWindowsAutomatically = false
-        webView.settings.allowFileAccess = false
-        webView.settings.allowContentAccess = true
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                applySitePresentation()
-                if (url != null) {
-                    val selectedTab = when {
-                        url.contains("create.php", ignoreCase = true) -> 2
-                        url.contains("#listings", ignoreCase = true) ||
-                            url.contains("listing.php", ignoreCase = true) -> 1
-                        else -> 0
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.loadsImagesAutomatically = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = true
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    if (url != null && url.substringBefore("#").trimEnd('/') == "https://4lov.ru") {
+                        extractListings()
                     }
-                    updateTabs(selectedTab)
-                }
-            }
-
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val uri = request.url
-                if (uri.scheme == "https" && uri.host == "4lov.ru") return false
-                if (uri.scheme == "http" && uri.host == "4lov.ru") {
-                    view.loadUrl(uri.buildUpon().scheme("https").build().toString())
-                    return true
-                }
-                return try {
-                    startActivity(Intent(Intent.ACTION_VIEW, uri))
-                    true
-                } catch (_: ActivityNotFoundException) {
-                    true
-                }
-            }
-        }
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progress.progress = newProgress
-                progress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
-            }
-
-            override fun onShowFileChooser(
-                webView: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
-            ): Boolean {
-                fileChooserCallback?.onReceiveValue(null)
-                fileChooserCallback = filePathCallback
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                }
-                return try {
-                    startActivityForResult(Intent.createChooser(intent, "Выберите фотографии"), FILE_CHOOSER_REQUEST)
-                    true
-                } catch (_: ActivityNotFoundException) {
-                    fileChooserCallback = null
-                    false
                 }
             }
         }
 
-        webContainer.addView(webView, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-        root.addView(webContainer, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
+        setContent {
+            var screen by remember { mutableStateOf(Screen.HOME) }
+            var listings by remember { mutableStateOf<List<Listing>>(emptyList()) }
+            var categories by remember { mutableStateOf(listOf(Category("all", "Все"))) }
+            var selected by remember { mutableStateOf("all") }
+            var query by remember { mutableStateOf("") }
+            var loading by remember { mutableStateOf(true) }
+            var failed by remember { mutableStateOf(false) }
 
-        val nav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.WHITE)
-            elevation = dp(10).toFloat()
-            setPadding(dp(8), dp(7), dp(8), dp(7))
-        }
-        homeTab = navItem("⌂", "Главная")
-        searchTab = navItem("⌕", "Поиск")
-        publishTab = navItem("+", "Разместить")
-        listOf(homeTab, searchTab, publishTab).forEach { item ->
-            nav.addView(item, LinearLayout.LayoutParams(0, dp(54), 1f))
-        }
-        homeTab.setOnClickListener { open(homeUrl, 0) }
-        searchTab.setOnClickListener { open(searchUrl, 1) }
-        publishTab.setOnClickListener { open(publishUrl, 2) }
-        root.addView(nav)
-
-        setContentView(root)
-        // Android 15 enforces edge-to-edge for modern target SDKs. Keep the
-        // app header below the status bar and the bottom navigation above the
-        // system navigation area instead of drawing underneath either one.
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, windowInsets ->
-            val systemBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(0, systemBars.top, 0, systemBars.bottom)
-            windowInsets
-        }
-        ViewCompat.requestApplyInsets(root)
-        updateTabs(0)
-
-        if (savedInstanceState == null) {
-            webView.loadUrl(homeUrl)
-        } else {
-            webView.restoreState(savedInstanceState)
-        }
-
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (webView.canGoBack()) webView.goBack() else finish()
+            SideEffect {
+                publishData = { newListings, newCategories ->
+                    listings = newListings
+                    categories = newCategories
+                    loading = false
+                    failed = false
+                }
+                publishError = {
+                    loading = false
+                    failed = true
+                }
             }
-        })
+
+            BackHandler(screen != Screen.HOME) {
+                screen = Screen.HOME
+                web.loadUrl(homeUrl)
+            }
+
+            MaterialTheme(colorScheme = lightColorScheme(primary = Green, background = Background, surface = UiColor.White)) {
+                Column(Modifier.fillMaxSize().background(Background)) {
+                    Row(
+                        Modifier.fillMaxWidth().background(UiColor.White).padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(Modifier.size(44.dp), color = Green, shape = RoundedCornerShape(13.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("4♡", color = UiColor.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Text(
+                            when (screen) { Screen.HOME -> "ForLove"; Screen.DETAIL -> "Объявление"; Screen.PUBLISH -> "Разместить" },
+                            Modifier.weight(1f).padding(start = 12.dp),
+                            color = Dark, fontSize = 19.sp, fontWeight = FontWeight.Bold
+                        )
+                        if (screen != Screen.HOME) {
+                            Text("Назад", Modifier.clickable {
+                                screen = Screen.HOME
+                                web.loadUrl(homeUrl)
+                            }.padding(8.dp), color = Green, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        AndroidView(
+                            factory = { web },
+                            modifier = Modifier.fillMaxSize(),
+                            update = { it.visibility = if (screen == Screen.HOME) View.INVISIBLE else View.VISIBLE }
+                        )
+                        if (screen == Screen.HOME) {
+                            Column(Modifier.fillMaxSize().background(Background)) {
+                                Text(
+                                    "Хорошие вещи находят новых хозяев",
+                                    Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 4.dp),
+                                    color = Dark, fontSize = 21.sp, fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "Объявления людей, готовых делиться и помогать",
+                                    Modifier.padding(horizontal = 18.dp),
+                                    color = Grey, fontSize = 13.sp
+                                )
+                                OutlinedTextField(
+                                    value = query, onValueChange = { query = it },
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
+                                    singleLine = true, shape = RoundedCornerShape(15.dp),
+                                    placeholder = { Text("Что ищем?") },
+                                    leadingIcon = { Text("⌕", color = Green, fontSize = 22.sp) }
+                                )
+                                if (categories.size > 1) {
+                                    LazyRow(
+                                        contentPadding = PaddingValues(horizontal = 16.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.padding(bottom = 12.dp)
+                                    ) {
+                                        items(categories, key = { it.slug }) { item ->
+                                            Surface(
+                                                color = if (selected == item.slug) Green else UiColor.White,
+                                                shape = RoundedCornerShape(30.dp),
+                                                modifier = Modifier.clickable { selected = item.slug }
+                                            ) {
+                                                Text(
+                                                    item.label, Modifier.padding(horizontal = 15.dp, vertical = 9.dp),
+                                                    color = if (selected == item.slug) UiColor.White else Dark,
+                                                    fontSize = 13.sp, fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                val shown = listings.filter {
+                                    (selected == "all" || it.category == selected) &&
+                                    (query.isBlank() || it.searchText.contains(query, ignoreCase = true))
+                                }
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 5.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Свежие объявления", color = Dark, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    Text(shown.size.toString(), color = Grey, fontSize = 12.sp)
+                                }
+                                when {
+                                    loading && listings.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(color = Green)
+                                    }
+                                    failed && listings.isEmpty() -> EmptyState("Не удалось загрузить объявления", "Проверьте подключение и попробуйте ещё раз") {
+                                        loading = true; failed = false; web.reload()
+                                    }
+                                    shown.isEmpty() -> EmptyState("Пока ничего не найдено", "Попробуйте изменить запрос или раздел", null)
+                                    else -> LazyColumn(
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 7.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        items(shown, key = { it.id }) { item ->
+                                            ListingCard(item) {
+                                                screen = Screen.DETAIL
+                                                web.loadUrl(item.url)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth().background(UiColor.White).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        NavItem("⌂", "Главная", screen == Screen.HOME) {
+                            screen = Screen.HOME
+                            if (web.url?.substringBefore("#")?.trimEnd('/') != homeUrl.trimEnd('/')) web.loadUrl(homeUrl)
+                        }
+                        NavItem("⌕", "Поиск", false) {
+                            screen = Screen.HOME
+                            selected = "all"
+                            query = ""
+                        }
+                        NavItem("+", "Разместить", screen == Screen.PUBLISH) {
+                            screen = Screen.PUBLISH
+                            web.loadUrl("https://4lov.ru/create.php")
+                        }
+                    }
+                }
+            }
+        }
+        web.loadUrl(homeUrl)
     }
 
-    private fun applySitePresentation() {
-        val script = """
+    private fun extractListings() {
+        val js = """
             (function() {
-              if (!document.getElementById('fourlov-app-tweaks')) {
-                const style = document.createElement('style');
-                style.id = 'fourlov-app-tweaks';
-                style.textContent = 'select, .form-select, .category-select, .subcategory-select, #category, #subcategory, [name=category_id], [name=subcategory_id] { font-size:15px !important; line-height:1.35 !important; } .fourlov-back-button { display:inline-flex !important; align-items:center !important; justify-content:center !important; min-height:44px !important; padding:11px 18px !important; border:0 !important; border-radius:12px !important; background:#278b55 !important; color:#fff !important; font:600 15px/1.2 sans-serif !important; text-decoration:none !important; cursor:pointer !important; }';
-                document.head.appendChild(style);
-              }
-              document.querySelectorAll('a').forEach(function(a) {
-                const label = (a.innerText || a.textContent || '').trim().toLowerCase().replace(/ё/g, 'е');
-                if (label === 'вернуться к объявлениям' || label === 'к объявлениям') { a.classList.add('fourlov-back-button'); a.setAttribute('role', 'button'); }
-              });
+              const cards = Array.from(document.querySelectorAll('.listing-card')).map(card => {
+                const href = card.getAttribute('data-url') || '';
+                const title = card.querySelector('.listing-title')?.textContent?.trim() || '';
+                return {
+                  id: (href.match(/[?&]id=(d+)/) || [,''])[1],
+                  title: title,
+                  city: card.querySelector('.listing-city')?.textContent?.trim() || '',
+                  date: card.querySelector('.listing-meta span:last-child')?.textContent?.trim() || '',
+                  category: card.getAttribute('data-category') || 'other',
+                  image: card.querySelector('.gallery-main-image')?.src || '',
+                  href: href,
+                  searchText: card.innerText || ''
+                };
+              }).filter(x => x.id && x.title && x.href);
+              const categories = Array.from(document.querySelectorAll('.filter-button')).map(b => ({
+                slug: b.getAttribute('data-filter') || 'all',
+                label: (b.textContent || '').trim()
+              })).filter(x => x.label);
+              return JSON.stringify({cards: cards, categories: categories});
             })();
         """.trimIndent()
-        webView.evaluateJavascript(script, null)
-    }
-
-    private fun navItem(symbol: String, label: String): TextView {
-        return TextView(this).apply {
-            text = "$symbol\n$label"
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(112, 133, 117))
-            typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.NORMAL)
-        }
-    }
-
-    private fun open(url: String, selected: Int) {
-        updateTabs(selected)
-        if (webView.url != url) webView.loadUrl(url)
-        else if (selected == 1) webView.evaluateJavascript(
-            "document.getElementById('searchInput')?.focus();", null
-        )
-    }
-
-    private fun updateTabs(selected: Int) {
-        val items = listOf(homeTab, searchTab, publishTab)
-        items.forEachIndexed { index, item ->
-            item.setTextColor(if (index == selected) Color.rgb(36, 132, 78) else Color.rgb(112, 133, 117))
-            item.typeface = android.graphics.Typeface.create(
-                "sans-serif-rounded",
-                if (index == selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
-            )
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != FILE_CHOOSER_REQUEST) return
-
-        val callback = fileChooserCallback ?: return
-        fileChooserCallback = null
-        val results = if (resultCode == Activity.RESULT_OK) {
-            val clip = data?.clipData
-            when {
-                clip != null -> Array(clip.itemCount) { index -> clip.getItemAt(index).uri }
-                data?.data != null -> arrayOf(data.data!!)
-                else -> null
+        web.evaluateJavascript(js) { raw ->
+            try {
+                val jsonText = JSONTokener(raw ?: "null").nextValue() as? String ?: ""
+                val root = JSONObject(jsonText)
+                val cards = root.optJSONArray("cards") ?: JSONArray()
+                val filters = root.optJSONArray("categories") ?: JSONArray()
+                val data = mutableListOf<Listing>()
+                for (i in 0 until cards.length()) {
+                    val item = cards.optJSONObject(i) ?: continue
+                    val href = item.optString("href")
+                    data += Listing(
+                        item.optString("id"), item.optString("title"), item.optString("city"),
+                        item.optString("date"), item.optString("category"), item.optString("image"),
+                        if (href.startsWith("http")) href else "https://4lov.ru" + href,
+                        item.optString("searchText")
+                    )
+                }
+                val categoryData = mutableListOf(Category("all", "Все"))
+                for (i in 0 until filters.length()) {
+                    val item = filters.optJSONObject(i) ?: continue
+                    val slug = item.optString("slug")
+                    val label = item.optString("label")
+                    if (slug.isNotBlank() && slug != "all" && label.isNotBlank()) categoryData += Category(slug, label)
+                }
+                runOnUiThread { publishData?.invoke(data, categoryData) }
+            } catch (_: Exception) {
+                runOnUiThread { publishError?.invoke() }
             }
-        } else null
-        callback.onReceiveValue(results)
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        webView.saveState(outState)
-        super.onSaveInstanceState(outState)
+        }
     }
 
     override fun onDestroy() {
-        fileChooserCallback?.onReceiveValue(null)
-        webView.stopLoading()
-        webView.destroy()
+        if (::web.isInitialized) { web.stopLoading(); web.destroy() }
         super.onDestroy()
     }
+}
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+@Composable
+private fun ListingCard(item: Listing, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = UiColor.White, shape = RoundedCornerShape(18.dp), shadowElevation = 2.dp
+    ) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (item.image.isNotBlank()) {
+                AsyncImage(item.image, contentDescription = item.title, modifier = Modifier.size(104.dp).clip(RoundedCornerShape(13.dp)))
+            } else {
+                Box(Modifier.size(104.dp).clip(RoundedCornerShape(13.dp)).background(UiColor(0xFFEAF3E9)), contentAlignment = Alignment.Center) {
+                    Text("♡", color = Green, fontSize = 34.sp)
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(item.categoryLabel(), color = Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                Text(item.title, color = Dark, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(7.dp))
+                Text(item.city, color = Grey, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.date, color = Grey, fontSize = 11.sp)
+            }
+            Text("›", color = Green, fontSize = 25.sp)
+        }
+    }
+}
 
-    companion object {
-        private const val FILE_CHOOSER_REQUEST = 4107
+private fun Listing.categoryLabel(): String = when (category) {
+    "give" -> "Отдам"
+    "receive" -> "Приму в дар"
+    "need" -> "Нужна помощь"
+    "help" -> "Могу помочь"
+    "animals" -> "Животные"
+    else -> "Объявление"
+}
+
+@Composable
+private fun EmptyState(title: String, subtitle: String, retry: (() -> Unit)?) {
+    Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("♡", color = Green, fontSize = 42.sp)
+        Text(title, color = Dark, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        Text(subtitle, color = Grey, fontSize = 13.sp)
+        if (retry != null) {
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = retry) { Text("Повторить") }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.NavItem(icon: String, label: String, active: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier.weight(1f).clickable(onClick = onClick).padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(icon, color = if (active) Green else Grey, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = if (active) Green else Grey, fontSize = 11.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
     }
 }

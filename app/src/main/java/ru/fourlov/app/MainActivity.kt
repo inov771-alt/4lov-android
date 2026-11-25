@@ -274,7 +274,7 @@ private fun filterListings(source: List<Listing>, query: String, country: String
 private fun HomeScreen(modifier: Modifier, listings: List<Listing>, totalCount: Int, loading: Boolean, error: String?,
     page: Int, onPage: (Int) -> Unit, onCategory: (Category) -> Unit, onAll: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit) {
     val totalPages = pageCount(totalCount)
-    val visibleListings = listings.take(50)
+    val visibleListings = pageSlice(listings, page)
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -22,6 +22,9 @@ class ListingsRepository {
                 val body = response.body?.string().orEmpty()
                 require(body.isNotBlank()) { "Сервер вернул пустой ответ" }
                 val root = JSONObject(body)
+                if (!root.optBoolean("success", true)) {
+                    error(root.optString("message").ifBlank { root.optString("error").ifBlank { "Не удалось получить объявления" } })
+                }
                 if (root.has("error") && !root.isNull("error")) error(root.optString("error"))
                 val payload = root.opt("data")
                 val array = when (payload) {
@@ -47,7 +50,11 @@ class ListingsRepository {
                             id = item.optString("id", i.toString()),
                             title = item.optString("title").ifBlank { "Объявление" },
                             description = item.optString("description"), city = item.optString("city"),
-                            country = item.optString("country"), categoryName = item.optString("category_name"),
+                            country = when (item.optString("country").ifBlank { item.optString("country_code") }.uppercase()) {
+                                "RU" -> "Россия"
+                                "BY" -> "Беларусь"
+                                else -> item.optString("country")
+                            }, categoryName = item.optString("category_name"),
                             subcategoryName = item.optString("subcategory_name"),
                             publishedAt = item.optString("published_at"), photos = photos
                         ))

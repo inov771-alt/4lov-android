@@ -183,13 +183,26 @@ private fun <T> pageSlice(items: List<T>, page: Int): List<T> {
 private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> Unit) {
     if (totalPages <= 1) return
     val safePage = currentPage.coerceIn(1, totalPages)
+    val visiblePages = buildList {
+        add(1)
+        if (safePage > 3) add(-1)
+        for (number in (safePage - 1)..(safePage + 1)) {
+            if (number in 2 until totalPages) add(number)
+        }
+        if (safePage < totalPages - 2) add(-1)
+        if (totalPages > 1) add(totalPages)
+    }.distinct()
+
     Column(
         Modifier.fillMaxWidth().padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Страница $safePage из $totalPages", color = TextSecondary, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             PageControl("‹", Modifier.weight(1f), safePage > 1) { onPage(safePage - 1) }
             PageControl("›", Modifier.weight(1f), safePage < totalPages) { onPage(safePage + 1) }
         }
@@ -197,15 +210,21 @@ private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> U
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            (1..totalPages).forEach { number ->
-                PageControl(number.toString(), Modifier.widthIn(min = 34.dp).height(36.dp),
-                    true, selected = number == safePage) { onPage(number) }
+            visiblePages.forEach { number ->
+                if (number == -1) {
+                    Text("…", Modifier.padding(horizontal = 5.dp, vertical = 8.dp),
+                        color = TextSecondary, fontSize = 16.sp)
+                } else {
+                    PageControl(number.toString(), Modifier.width(40.dp), true,
+                        selected = number == safePage) { onPage(number) }
+                }
             }
         }
     }
 }
+
 @Composable
 private fun PageControl(
     label: String,
@@ -214,25 +233,24 @@ private fun PageControl(
     selected: Boolean = false,
     onClick: () -> Unit
 ) {
-    if (selected) {
-        Button(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier.height(36.dp),
-            contentPadding = PaddingValues(0.dp),
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Text(label, fontSize = 12.sp, maxLines = 1)
-        }
-    } else {
-        TextButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier.height(36.dp),
-            contentPadding = PaddingValues(0.dp)
-        ) {
-            Text(label, fontSize = 12.sp, maxLines = 1)
-        }
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(38.dp),
+        contentPadding = PaddingValues(0.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = if (selected) ButtonDefaults.buttonColors(
+            containerColor = Green,
+            contentColor = SurfaceWhite
+        ) else ButtonDefaults.buttonColors(
+            containerColor = SurfaceWhite,
+            contentColor = GreenDark,
+            disabledContainerColor = SurfaceWhite,
+            disabledContentColor = TextSecondary
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 2.dp else 0.dp)
+    ) {
+        Text(label, fontSize = 13.sp, maxLines = 1)
     }
 }
 

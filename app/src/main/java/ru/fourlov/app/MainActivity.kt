@@ -83,11 +83,6 @@ class MainActivity : ComponentActivity() {
             setTextColor(Color.rgb(36, 66, 48))
             typeface = android.graphics.Typeface.create("sans-serif-rounded", android.graphics.Typeface.BOLD)
         })
-        brand.addView(TextView(this).apply {
-            text = "Делимся добром"
-            textSize = 12f
-            setTextColor(Color.rgb(112, 133, 117))
-        })
         header.addView(mark)
         header.addView(brand, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(header)
@@ -114,6 +109,11 @@ class MainActivity : ComponentActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                applySitePresentation()
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val uri = request.url
                 if (uri.scheme == "https" && uri.host == "4lov.ru") return false
@@ -206,6 +206,24 @@ class MainActivity : ComponentActivity() {
                 if (webView.canGoBack()) webView.goBack() else finish()
             }
         })
+    }
+
+    private fun applySitePresentation() {
+        val script = """
+            (function() {
+              if (!document.getElementById('fourlov-app-tweaks')) {
+                const style = document.createElement('style');
+                style.id = 'fourlov-app-tweaks';
+                style.textContent = 'select, .form-select, .category-select, .subcategory-select, #category, #subcategory, [name=category_id], [name=subcategory_id] { font-size:15px !important; line-height:1.35 !important; } .fourlov-back-button { display:inline-flex !important; align-items:center !important; justify-content:center !important; min-height:44px !important; padding:11px 18px !important; border:0 !important; border-radius:12px !important; background:#278b55 !important; color:#fff !important; font:600 15px/1.2 sans-serif !important; text-decoration:none !important; cursor:pointer !important; }';
+                document.head.appendChild(style);
+              }
+              document.querySelectorAll('a').forEach(function(a) {
+                const label = (a.innerText || a.textContent || '').trim().toLowerCase().replace(/ё/g, 'е');
+                if (label === 'вернуться к объявлениям' || label === 'к объявлениям') { a.classList.add('fourlov-back-button'); a.setAttribute('role', 'button'); }
+              });
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script, null)
     }
 
     private fun navItem(symbol: String, label: String): TextView {

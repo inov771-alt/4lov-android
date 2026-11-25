@@ -2,6 +2,7 @@ package ru.fourlov.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,18 +13,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircleOutline
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
+import ru.fourlov.app.data.ListingsRepository
 import ru.fourlov.app.model.Category
+import ru.fourlov.app.model.Listing
 import ru.fourlov.app.model.categories
 import ru.fourlov.app.ui.theme.*
 
@@ -35,205 +42,336 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class AppTab { HOME, SEARCH, PUBLISH }
+private sealed interface HomeRoute {
+    data object Root : HomeRoute
+    data class CategoryLevel(val category: Category) : HomeRoute
+    data class ListingsLevel(val category: Category?, val subcategory: String? = null) : HomeRoute
+}
 
 @Composable
 private fun FourLovApp() {
     var tab by remember { mutableStateOf(AppTab.HOME) }
-    var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var searchText by remember { mutableStateOf("") }
+    val stack = remember { mutableStateListOf<HomeRoute>(HomeRoute.Root) }
+    var query by remember { mutableStateOf("") }
     var country by remember { mutableStateOf("Россия") }
+    var searchCategory by remember { mutableStateOf<Category?>(null) }
+    var listings by remember { mutableStateOf<List<Listing>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val repository = remember { ListingsRepository() }
+    val scope = rememberCoroutineScope()
+
+    fun refresh() {
+        scope.launch {
+            loading = true
+            error = null
+            repository.loadListings().onSuccess { listings = it }
+                .onFailure { error = it.message ?: "Не удалось загрузить объявления" }
+            loading = false
+        }
+    }
+    fun back() {
+        if (tab != AppTab.HOME) tab = AppTab.HOME
+        else if (stack.size > 1) stack.removeAt(stack.lastIndex)
+    }
+    LaunchedEffect(Unit) { refresh() }
+    BackHandler(enabled = tab != AppTab.HOME || stack.size > 1) { back() }
+
+    val route = stack.last()
+    val searchResults = filterListings(listings, query, country, searchCategory, null)
 
     Scaffold(
         containerColor = Background,
+        topBar = {
+            if (tab == AppTab.HOME && route != HomeRoute.Root) {
+                Column(Modifier.fillMaxWidth().background(SurfaceWhite)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { back() }) { Icon(Icons.Default.ArrowBack, "Назад") }
+                        val title = when (route) {
+                            is HomeRoute.CategoryLevel -> route.category.title
+                            is HomeRoute.ListingsLevel -> route.subcategory ?: route.category?.title ?: "Все объявления"
+                            HomeRoute.Root -> "ForLove"
+                        }
+                        Text(title, color = TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, "Обновить") }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("Главная", Modifier.clickable { stack.clear(); stack.add(HomeRoute.Root) }, color = GreenDark, fontSize = 12.sp)
+                        when (route) {
+                            is HomeRoute.CategoryLevel -> {
+                                Text("›", color = TextSecondary)
+                                Text(route.category.title, color = TextSecondary, fontSize = 12.sp)
+                            }
+                            is HomeRoute.ListingsLevel -> {
+                                Text("›", color = TextSecondary)
+                                Text(route.category?.title ?: "Все объявления", Modifier.clickable {
+                                    val c = route.category
+                                    stack.clear(); stack.add(HomeRoute.Root)
+                                    if (c != null) stack.add(HomeRoute.CategoryLevel(c))
+                                }, color = GreenDark, fontSize = 12.sp)
+                                if (route.subcategory != null) {
+                                    Text("›", color = TextSecondary)
+                                    Text(route.subcategory, color = TextSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            HomeRoute.Root -> Unit
+                        }
+                    }
+                }
+            }
+        },
         bottomBar = {
             NavigationBar(containerColor = SurfaceWhite) {
-                NavigationBarItem(
-                    selected = tab == AppTab.HOME,
-                    onClick = { tab = AppTab.HOME },
-                    icon = { Icon(Icons.Default.Home, null) },
-                    label = { Text("Главная") }
-                )
-                NavigationBarItem(
-                    selected = tab == AppTab.SEARCH,
-                    onClick = { tab = AppTab.SEARCH },
-                    icon = { Icon(Icons.Default.Search, null) },
-                    label = { Text("Поиск") }
-                )
-                NavigationBarItem(
-                    selected = tab == AppTab.PUBLISH,
-                    onClick = { tab = AppTab.PUBLISH },
-                    icon = { Icon(Icons.Default.AddCircleOutline, null) },
-                    label = { Text("Разместить") }
-                )
+                NavigationBarItem(tab == AppTab.HOME, {
+                    tab = AppTab.HOME; stack.clear(); stack.add(HomeRoute.Root)
+                }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Главная") })
+                NavigationBarItem(tab == AppTab.SEARCH, { tab = AppTab.SEARCH },
+                    icon = { Icon(Icons.Default.Search, null) }, label = { Text("Поиск") })
+                NavigationBarItem(tab == AppTab.PUBLISH, { tab = AppTab.PUBLISH },
+                    icon = { Icon(Icons.Default.AddCircleOutline, null) }, label = { Text("Разместить") })
             }
         }
     ) { padding ->
         when (tab) {
-            AppTab.HOME -> HomeScreen(
-                modifier = Modifier.padding(padding),
-                selectedCategory = selectedCategory,
-                onCategory = { selectedCategory = if (selectedCategory == it) null else it },
-                onSearch = { tab = AppTab.SEARCH }
-            )
-            AppTab.SEARCH -> SearchScreen(
-                modifier = Modifier.padding(padding),
-                query = searchText,
-                onQuery = { searchText = it },
-                country = country,
-                onCountry = { country = it },
-                category = selectedCategory,
-                onCategory = { selectedCategory = it }
-            )
-            AppTab.PUBLISH -> PublishInfoScreen(Modifier.padding(padding))
+            AppTab.HOME -> when (route) {
+                HomeRoute.Root -> HomeScreen(Modifier.padding(padding), listings, loading, error,
+                    onCategory = { stack.add(HomeRoute.CategoryLevel(it)) },
+                    onAll = { stack.add(HomeRoute.ListingsLevel(null)) },
+                    onSearch = { tab = AppTab.SEARCH }, onRefresh = { refresh() })
+                is HomeRoute.CategoryLevel -> CategoryScreen(Modifier.padding(padding), route.category, listings, loading, error,
+                    onSubcategory = { stack.add(HomeRoute.ListingsLevel(route.category, it)) },
+                    onAll = { stack.add(HomeRoute.ListingsLevel(route.category)) }, onRefresh = { refresh() })
+                is HomeRoute.ListingsLevel -> ListingsScreen(Modifier.padding(padding),
+                    filterListings(listings, "", "", route.category, route.subcategory),
+                    route.category?.title ?: "Все объявления", route.subcategory, loading, error, { refresh() })
+            }
+            AppTab.SEARCH -> SearchScreen(Modifier.padding(padding), query, { query = it }, country, { country = it },
+                searchCategory, { searchCategory = it }, searchResults, loading, error, { refresh() })
+            AppTab.PUBLISH -> PublishScreen(Modifier.padding(padding))
         }
     }
 }
 
+private fun filterListings(source: List<Listing>, query: String, country: String,
+    category: Category?, subcategory: String?): List<Listing> = source.filter { item ->
+    val textOk = query.isBlank() || item.title.contains(query, true) ||
+        item.description.contains(query, true) || item.location.contains(query, true)
+    val countryOk = country.isBlank() || item.country.isBlank() ||
+        (country == "Россия" && (item.country.contains("Россия", true) || item.country.equals("RU", true))) ||
+        (country == "Беларусь" && (item.country.contains("Беларусь", true) || item.country.equals("BY", true)))
+    val categoryOk = category == null || if (category.slug == "together")
+        item.categoryName.contains("вмест", true) || item.categoryName.equals("together", true)
+    else item.categoryName.contains(category.title, true) || item.categoryName.equals(category.slug, true) ||
+        item.categoryPath.contains(category.title, true)
+    val subcategoryOk = subcategory == null || item.subcategoryName.equals(subcategory, true)
+    textOk && countryOk && categoryOk && subcategoryOk
+}
+
 @Composable
-private fun HomeScreen(
-    modifier: Modifier,
-    selectedCategory: Category?,
-    onCategory: (Category) -> Unit,
-    onSearch: () -> Unit
-) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
+private fun HomeScreen(modifier: Modifier, listings: List<Listing>, loading: Boolean, error: String?,
+    onCategory: (Category) -> Unit, onAll: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(48.dp).background(Green, RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center
-                ) { Text("4♡", color = SurfaceWhite, fontSize = 23.sp, fontWeight = FontWeight.Bold) }
+                Box(Modifier.size(48.dp).background(Green, RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+                    Text("4♡", color = SurfaceWhite, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                }
                 Spacer(Modifier.width(12.dp))
-                Column {
-                    Text("4LOV", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Column(Modifier.weight(1f)) {
+                    Text("ForLove", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Text("Пространство взаимопомощи", color = TextSecondary, fontSize = 12.sp)
                 }
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Обновить") }
             }
         }
         item {
-            Column(
-                modifier = Modifier.fillMaxWidth().background(GreenPale, RoundedCornerShape(24.dp)).padding(20.dp)
-            ) {
-                Text("Добро начинается рядом", fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold, color = GreenDark)
-                Spacer(Modifier.height(8.dp))
-                Text("Отдай то, что не нужно. Найди то, что важно. Помоги тем, кому нужна поддержка.", color = TextPrimary, lineHeight = 21.sp)
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = onSearch, shape = RoundedCornerShape(14.dp)) {
-                    Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Найти объявление")
+            Column(Modifier.fillMaxWidth().background(GreenPale, RoundedCornerShape(22.dp)).padding(19.dp)) {
+                Text("Добро начинается рядом", fontSize = 23.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold, color = GreenDark)
+                Spacer(Modifier.height(7.dp))
+                Text("Отдай то, что не нужно. Найди то, что важно. Помоги тем, кому нужна поддержка.", color = TextPrimary, lineHeight = 20.sp)
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onSearch, shape = RoundedCornerShape(13.dp)) {
+                    Icon(Icons.Default.Search, null, Modifier.size(18.dp)); Spacer(Modifier.width(7.dp)); Text("Найти объявление")
                 }
             }
         }
-        item { Text("Выбери направление", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
-        items(categories.size) { index ->
-            val category = categories[index]
-            CategoryRow(category, selectedCategory == category) { onCategory(category) }
+        item { Text("Разделы", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
+        items(categories, key = { it.slug }) { category -> CategoryRow(category) { onCategory(category) } }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Свежие объявления", Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                TextButton(onClick = onAll) { Text("Все") }
+            }
+        }
+        when {
+            loading && listings.isEmpty() -> item { LoadingPanel() }
+            error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
+            listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "Опубликованные объявления 4lov.ru появятся здесь.", onRefresh) }
+            else -> items(listings.take(8), key = { it.id }) { ListingCard(it) }
+        }
+    }
+}
+
+@Composable
+private fun CategoryScreen(modifier: Modifier, category: Category, listings: List<Listing>,
+    loading: Boolean, error: String?, onSubcategory: (String) -> Unit, onAll: () -> Unit, onRefresh: () -> Unit) {
+    val children = listings.filter { item ->
+        if (category.slug == "together") item.categoryName.contains("вмест", true) || item.categoryName.equals("together", true)
+        else item.categoryName.contains(category.title, true) || item.categoryName.equals(category.slug, true) ||
+            item.categoryPath.contains(category.title, true)
+    }.map { it.subcategoryName.trim() }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Column(Modifier.fillMaxWidth().background(GreenPale, RoundedCornerShape(18.dp)).padding(17.dp)) {
+                Text(category.symbol, fontSize = 27.sp)
+                Text(category.title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = GreenDark)
+                Text(category.subtitle, fontSize = 13.sp, color = TextSecondary)
+            }
+        }
+        item { Text("Подразделы", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
+        when {
+            loading && listings.isEmpty() -> item { LoadingPanel() }
+            error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить подразделы", error, onRefresh) }
+            children.isEmpty() -> item { InfoPanel("Подразделы пока пусты",
+                "Пока нет опубликованных объявлений с подразделами в этой категории.", onRefresh) }
+            else -> items(children, key = { it }) { child -> NavigationRow(child) { onSubcategory(child) } }
         }
         item {
-            Column(
-                modifier = Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(20.dp)).padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(Icons.Default.FavoriteBorder, null, tint = Green, modifier = Modifier.size(28.dp))
-                Spacer(Modifier.height(8.dp))
-                Text("Объявления появятся после подключения сервера", fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(4.dp))
-                Text("Сейчас мы настраиваем связь приложения с 4lov.ru. Никаких вымышленных объявлений здесь нет.", color = TextSecondary, textAlign = TextAlign.Center, fontSize = 13.sp)
+            Button(onClick = onAll, Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp)) {
+                Text("Все объявления раздела")
             }
         }
     }
 }
 
 @Composable
-private fun CategoryRow(category: Category, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .background(if (selected) GreenPale else SurfaceWhite, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.size(48.dp).background(if (selected) SurfaceWhite else Background, CircleShape),
-            contentAlignment = Alignment.Center
-        ) { Text(category.symbol, fontSize = 23.sp) }
-        Spacer(Modifier.width(14.dp))
+private fun ListingsScreen(modifier: Modifier, listings: List<Listing>, title: String, subcategory: String?,
+    loading: Boolean, error: String?, onRefresh: () -> Unit) {
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+        item {
+            Column {
+                Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                if (subcategory != null) Text(subcategory, fontSize = 13.sp, color = TextSecondary)
+                Text("Объявлений: ${listings.size}", fontSize = 12.sp, color = TextSecondary)
+            }
+        }
+        when {
+            loading && listings.isEmpty() -> item { LoadingPanel() }
+            error != null && listings.isEmpty() -> item { InfoPanel("Не удалось загрузить объявления", error, onRefresh) }
+            listings.isEmpty() -> item { InfoPanel("Пока нет объявлений", "В этом разделе пока нет опубликованных объявлений.", onRefresh) }
+            else -> items(listings, key = { it.id }) { ListingCard(it) }
+        }
+    }
+}
+
+@Composable
+private fun CategoryRow(category: Category, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(17.dp)).clickable(onClick = onClick).padding(15.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(45.dp).background(Background, CircleShape), contentAlignment = Alignment.Center) {
+            Text(category.symbol, fontSize = 22.sp)
+        }
+        Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text(category.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = TextPrimary)
             Text(category.subtitle, fontSize = 12.sp, color = TextSecondary)
         }
-        Text(if (selected) "✓" else "›", color = Green, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("›", color = Green, fontSize = 25.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun SearchScreen(
-    modifier: Modifier,
-    query: String,
-    onQuery: (String) -> Unit,
-    country: String,
-    onCountry: (String) -> Unit,
-    category: Category?,
-    onCategory: (Category?) -> Unit
-) {
-    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Поиск объявлений", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQuery,
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Что ищем?") },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            shape = RoundedCornerShape(16.dp),
-            singleLine = true
-        )
-        Text("Страна", fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilterChip(selected = country == "Россия", onClick = { onCountry("Россия") }, label = { Text("Россия") })
-            FilterChip(selected = country == "Беларусь", onClick = { onCountry("Беларусь") }, label = { Text("Беларусь") })
+private fun NavigationRow(title: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(15.dp)).clickable(onClick = onClick).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text("›", color = Green, fontSize = 24.sp)
+    }
+}
+
+@Composable
+private fun SearchScreen(modifier: Modifier, query: String, onQuery: (String) -> Unit,
+    country: String, onCountry: (String) -> Unit, category: Category?, onCategory: (Category?) -> Unit,
+    listings: List<Listing>, loading: Boolean, error: String?, onRefresh: () -> Unit) {
+    LazyColumn(modifier.fillMaxSize().padding(horizontal = 18.dp), contentPadding = PaddingValues(top = 20.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { Text("Поиск объявлений", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TextPrimary) }
+        item {
+            OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), placeholder = { Text("Что ищем?") },
+                leadingIcon = { Icon(Icons.Default.Search, null) }, shape = RoundedCornerShape(15.dp), singleLine = true)
         }
-        Text("Категория", fontWeight = FontWeight.SemiBold)
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            categories.forEach { item ->
-                FilterChip(
-                    selected = category == item,
-                    onClick = { onCategory(if (category == item) null else item) },
-                    label = { Text("${item.symbol}  ${item.title}") }
-                )
+        item { Text("Страна", fontWeight = FontWeight.SemiBold) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                FilterChip(country == "Россия", { onCountry("Россия") }, label = { Text("Россия") })
+                FilterChip(country == "Беларусь", { onCountry("Беларусь") }, label = { Text("Беларусь") })
+                FilterChip(country.isBlank(), { onCountry("") }, label = { Text("Все") })
             }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Фильтры готовы. Получение результатов будет включено после подключения к фактическим методам API.",
-            color = TextSecondary,
-            fontSize = 13.sp
-        )
+        item { Text("Раздел", fontWeight = FontWeight.SemiBold) }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                categories.forEach { c ->
+                    FilterChip(category == c, { onCategory(if (category == c) null else c) },
+                        label = { Text("${c.symbol}  ${c.title}") })
+                }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Результаты: ${listings.size}", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                TextButton(onClick = onRefresh) { Text("Обновить") }
+            }
+        }
+        when {
+            loading && listings.isEmpty() -> item { LoadingPanel() }
+            error != null && listings.isEmpty() -> item { InfoPanel("Ошибка загрузки", error, onRefresh) }
+            listings.isEmpty() -> item { Text("Ничего не найдено", color = TextSecondary) }
+            else -> items(listings, key = { it.id }) { ListingCard(it) }
+        }
     }
 }
 
 @Composable
-private fun PublishInfoScreen(modifier: Modifier) {
-    Column(
-        modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(Modifier.size(72.dp).background(GreenPale, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.AddCircleOutline, null, tint = Green, modifier = Modifier.size(36.dp))
+private fun ListingCard(item: Listing) {
+    Column(Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(17.dp)).padding(13.dp)) {
+        item.photos.firstOrNull()?.let { photo ->
+            AsyncImage(photo, item.title, Modifier.fillMaxWidth().height(175.dp), contentScale = ContentScale.Crop)
+            Spacer(Modifier.height(8.dp))
         }
-        Spacer(Modifier.height(18.dp))
-        Text("Разместить объявление", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Форму публикации подключим к существующей серверной логике 4LOV. До проверки реального API отправка не имитируется.",
-            textAlign = TextAlign.Center,
-            color = TextSecondary,
-            lineHeight = 21.sp
-        )
+        if (item.categoryPath.isNotBlank()) Text(item.categoryPath, color = GreenDark, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(item.title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        if (item.description.isNotBlank()) Text(item.description, color = TextSecondary, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        if (item.location.isNotBlank()) Text("⌖  ${item.location}", color = TextSecondary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun LoadingPanel() {
+    Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Green) }
+}
+
+@Composable
+private fun InfoPanel(title: String, message: String, onRetry: () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(SurfaceWhite, RoundedCornerShape(17.dp)).padding(17.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(title, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+        Spacer(Modifier.height(5.dp))
+        Text(message, color = TextSecondary, fontSize = 13.sp)
+        TextButton(onClick = onRetry) { Text("Повторить") }
+    }
+}
+
+@Composable
+private fun PublishScreen(modifier: Modifier) {
+    Column(modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center) {
+        Icon(Icons.Default.AddCircleOutline, null, tint = Green, modifier = Modifier.size(42.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("Разместить объявление", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Text("Для публикации откроется существующая форма 4lov.ru.", color = TextSecondary)
     }
 }

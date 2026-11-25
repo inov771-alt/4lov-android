@@ -36,7 +36,7 @@ class ListingsRepository {
                     is JSONArray -> payload
                     is JSONObject -> payload.optJSONArray("items")
                         ?: payload.optJSONArray("listings")
-                        ?: dataObject.optJSONArray("results")
+                        ?: payload.optJSONArray("results")
                         ?: JSONArray().put(payload)
                     else -> root.optJSONArray("listings")
                         ?: root.optJSONArray("items")

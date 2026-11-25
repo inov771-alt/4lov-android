@@ -174,42 +174,70 @@ private fun <T> pageSlice(items: List<T>, page: Int): List<T> {
 private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> Unit) {
     if (totalPages <= 1) return
     val safePage = currentPage.coerceIn(1, totalPages)
-    val numbers = buildList<Int?> {
-        add(1)
-        val start = maxOf(2, safePage - 2)
-        val end = minOf(totalPages - 1, safePage + 2)
-        if (start > 2) add(null)
-        for (number in start..end) add(number)
-        if (end < totalPages - 1) add(null)
-        if (totalPages > 1) add(totalPages)
+    val numbers: List<Int?> = when {
+        totalPages <= 7 -> (1..totalPages).map { it }
+        safePage <= 4 -> listOf(1, 2, 3, 4, 5, null, totalPages)
+        safePage >= totalPages - 3 -> listOf(1, null, totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages)
+        else -> listOf(1, null, safePage - 1, safePage, safePage + 1, null, totalPages)
     }
-    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Text("Страница $safePage из $totalPages", color = TextSecondary, fontSize = 12.sp)
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(6.dp))
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.Center,
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = { onPage(1) }, enabled = safePage > 1) { Text("«") }
-            TextButton(onClick = { onPage(safePage - 1) }, enabled = safePage > 1) { Text("‹") }
+            PageControl("‹", Modifier.weight(0.8f), safePage > 1) { onPage(safePage - 1) }
             numbers.forEach { number ->
                 if (number == null) {
-                    Text("…", modifier = Modifier.padding(horizontal = 3.dp), color = TextSecondary)
-                } else if (number == safePage) {
-                    Button(
-                        onClick = { onPage(number) },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                        modifier = Modifier.height(36.dp)
-                    ) { Text(number.toString()) }
-                } else {
-                    TextButton(onClick = { onPage(number) }, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp)) {
-                        Text(number.toString())
+                    Box(Modifier.weight(0.65f).height(36.dp), contentAlignment = Alignment.Center) {
+                        Text("…", color = TextSecondary, fontSize = 13.sp)
                     }
+                } else {
+                    PageControl(
+                        number.toString(),
+                        Modifier.weight(1f),
+                        true,
+                        selected = number == safePage
+                    ) { onPage(number) }
                 }
             }
-            TextButton(onClick = { onPage(safePage + 1) }, enabled = safePage < totalPages) { Text("›") }
-            TextButton(onClick = { onPage(totalPages) }, enabled = safePage < totalPages) { Text("»") }
+            PageControl("›", Modifier.weight(0.8f), safePage < totalPages) { onPage(safePage + 1) }
+        }
+    }
+}
+
+@Composable
+private fun PageControl(
+    label: String,
+    modifier: Modifier,
+    enabled: Boolean,
+    selected: Boolean = false,
+    onClick: () -> Unit
+) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.height(36.dp),
+            contentPadding = PaddingValues(0.dp),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(label, fontSize = 12.sp, maxLines = 1)
+        }
+    } else {
+        TextButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.height(36.dp),
+            contentPadding = PaddingValues(0.dp)
+        ) {
+            Text(label, fontSize = 12.sp, maxLines = 1)
         }
     }
 }

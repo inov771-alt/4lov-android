@@ -1,10 +1,16 @@
 package ru.fourlov.app.model
 
+data class Subcategory(
+    val slug: String,
+    val title: String
+)
+
 data class Category(
     val slug: String,
     val title: String,
     val subtitle: String,
-    val symbol: String
+    val symbol: String,
+    val subcategories: List<Subcategory> = emptyList()
 )
 
 val categories = listOf(

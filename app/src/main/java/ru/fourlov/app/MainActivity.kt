@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -58,18 +59,22 @@ private fun FourLovApp() {
     var country by remember { mutableStateOf("Россия") }
     var searchCategory by remember { mutableStateOf<Category?>(null) }
     var listings by remember { mutableStateOf<List<Listing>>(emptyList()) }
+    var totalCount by remember { mutableIntStateOf(0) }
     var page by remember { mutableIntStateOf(1) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val repository = remember { ListingsRepository() }
     val scope = rememberCoroutineScope()
 
-    fun refresh() {
+    fun refresh(targetPage: Int = 1) {
         scope.launch {
             loading = true
             error = null
-            repository.loadListings().onSuccess { listings = it }
-                .onFailure { error = it.message ?: "Не удалось загрузить объявления" }
+            repository.loadListings(targetPage, 50).onSuccess {
+                listings = it.items
+                totalCount = it.totalCount
+                page = targetPage
+            }.onFailure { error = it.message ?: "Не удалось загрузить объявления" }
             loading = false
         }
     }
@@ -140,8 +145,8 @@ private fun FourLovApp() {
     ) { padding ->
         when (tab) {
             AppTab.HOME -> when (route) {
-                HomeRoute.Root -> HomeScreen(Modifier.padding(padding), listings, loading, error,
-                    page = page, onPage = { page = it },
+                HomeRoute.Root -> HomeScreen(Modifier.padding(padding), listings, totalCount, loading, error,
+                    page = page, onPage = { refresh(it) },
                     onCategory = { page = 1; stack.add(HomeRoute.CategoryLevel(it)) },
                     onAll = { page = 1; stack.add(HomeRoute.ListingsLevel(null)) },
                     onSearch = { page = 1; tab = AppTab.SEARCH }, onRefresh = { refresh() })
@@ -160,7 +165,7 @@ private fun FourLovApp() {
 }
 
 
-private const val LISTINGS_PER_PAGE = 24
+private const val LISTINGS_PER_PAGE = 50
 
 private fun pageCount(totalItems: Int): Int =
     maxOf(1, (totalItems + LISTINGS_PER_PAGE - 1) / LISTINGS_PER_PAGE)
@@ -174,44 +179,29 @@ private fun <T> pageSlice(items: List<T>, page: Int): List<T> {
 private fun PageNavigation(currentPage: Int, totalPages: Int, onPage: (Int) -> Unit) {
     if (totalPages <= 1) return
     val safePage = currentPage.coerceIn(1, totalPages)
-    val numbers: List<Int?> = when {
-        totalPages <= 7 -> (1..totalPages).map { it }
-        safePage <= 4 -> listOf(1, 2, 3, 4, 5, null, totalPages)
-        safePage >= totalPages - 3 -> listOf(1, null, totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages)
-        else -> listOf(1, null, safePage - 1, safePage, safePage + 1, null, totalPages)
-    }
-
     Column(
         Modifier.fillMaxWidth().padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Страница $safePage из $totalPages", color = TextSecondary, fontSize = 12.sp)
-        Spacer(Modifier.height(6.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PageControl("‹", Modifier.weight(1f), safePage > 1) { onPage(safePage - 1) }
+            PageControl("›", Modifier.weight(1f), safePage < totalPages) { onPage(safePage + 1) }
+        }
+        Spacer(Modifier.height(8.dp))
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            PageControl("‹", Modifier.weight(0.8f), safePage > 1) { onPage(safePage - 1) }
-            numbers.forEach { number ->
-                if (number == null) {
-                    Box(Modifier.weight(0.65f).height(36.dp), contentAlignment = Alignment.Center) {
-                        Text("…", color = TextSecondary, fontSize = 13.sp)
-                    }
-                } else {
-                    PageControl(
-                        number.toString(),
-                        Modifier.weight(1f),
-                        true,
-                        selected = number == safePage
-                    ) { onPage(number) }
-                }
+            (1..totalPages).forEach { number ->
+                PageControl(number.toString(), Modifier.widthIn(min = 34.dp).height(36.dp),
+                    true, selected = number == safePage) { onPage(number) }
             }
-            PageControl("›", Modifier.weight(0.8f), safePage < totalPages) { onPage(safePage + 1) }
         }
     }
 }
-
 @Composable
 private fun PageControl(
     label: String,
@@ -258,11 +248,11 @@ private fun filterListings(source: List<Listing>, query: String, country: String
 }
 
 @Composable
-private fun HomeScreen(modifier: Modifier, listings: List<Listing>, loading: Boolean, error: String?,
+private fun HomeScreen(modifier: Modifier, listings: List<Listing>, totalCount: Int, loading: Boolean, error: String?,
     page: Int, onPage: (Int) -> Unit, onCategory: (Category) -> Unit, onAll: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit) {
-    val totalPages = pageCount(listings.size)
-    val visibleListings = pageSlice(listings, page)
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+    val totalPages = pageCount(totalCount)
+    val visibleListings = listings.take(LISTINGS_PER_PAGE)
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp)), verticalArrangement = Arrangement.spacedBy(13.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(48.dp).background(Green, RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {

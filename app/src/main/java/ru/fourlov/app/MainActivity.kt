@@ -74,6 +74,7 @@ private fun FourLovApp() {
         }
     }
     fun back() {
+        page = 1
         if (tab != AppTab.HOME) tab = AppTab.HOME
         else if (stack.size > 1) stack.removeAt(stack.lastIndex)
     }
@@ -128,7 +129,7 @@ private fun FourLovApp() {
         bottomBar = {
             NavigationBar(containerColor = SurfaceWhite) {
                 NavigationBarItem(tab == AppTab.HOME, {
-                    tab = AppTab.HOME; stack.clear(); stack.add(HomeRoute.Root)
+                    tab = AppTab.HOME; page = 1; stack.clear(); stack.add(HomeRoute.Root)
                 }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Главная") })
                 NavigationBarItem(tab == AppTab.SEARCH, { tab = AppTab.SEARCH },
                     icon = { Icon(Icons.Default.Search, null) }, label = { Text("Поиск") })
@@ -143,7 +144,7 @@ private fun FourLovApp() {
                     page = page, onPage = { page = it },
                     onCategory = { page = 1; stack.add(HomeRoute.CategoryLevel(it)) },
                     onAll = { page = 1; stack.add(HomeRoute.ListingsLevel(null)) },
-                    onSearch = { tab = AppTab.SEARCH }, onRefresh = { refresh() })
+                    onSearch = { page = 1; tab = AppTab.SEARCH }, onRefresh = { refresh() })
                 is HomeRoute.CategoryLevel -> CategoryScreen(Modifier.padding(padding), route.category, listings, loading, error,
                     onSubcategory = { page = 1; stack.add(HomeRoute.ListingsLevel(route.category, it)) },
                     onAll = { page = 1; stack.add(HomeRoute.ListingsLevel(route.category)) }, onRefresh = { refresh() })

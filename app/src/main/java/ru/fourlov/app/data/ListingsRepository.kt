@@ -13,13 +13,12 @@ data class ListingsPage(val items: List<Listing>, val totalCount: Int)
 
 class ListingsRepository {
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS).build()
+        .readTimeout(60, TimeUnit.SECONDS).build()
 
     suspend fun loadListings(page: Int = 1, pageSize: Int = 50): Result<ListingsPage> = withContext(Dispatchers.IO) {
         runCatching {
-            val safePage = page.coerceAtLeast(1)
-            val safeLimit = pageSize.coerceIn(1, 50)
-            val offset = (safePage - 1) * safeLimit
+            val safeLimit = pageSize.coerceIn(1, 5000)
+            val offset = 0
             val request = Request.Builder().url(ApiConfig.BASE_URL + "api/listings.php?limit=$safeLimit&offset=$offset")
                 .header("Accept", "application/json").get().build()
             client.newCall(request).execute().use { response ->
@@ -32,10 +31,17 @@ class ListingsRepository {
                 }
                 if (root.has("error") && !root.isNull("error")) error(root.optString("error"))
                 val payload = root.opt("data")
+                val dataObject = payload as? JSONObject
                 val array = when (payload) {
                     is JSONArray -> payload
-                    is JSONObject -> JSONArray().put(payload)
-                    else -> root.optJSONArray("listings") ?: JSONArray()
+                    is JSONObject -> payload.optJSONArray("items")
+                        ?: payload.optJSONArray("listings")
+                        ?: payload.optJSONArray("results")
+                        ?: JSONArray().put(payload)
+                    else -> root.optJSONArray("listings")
+                        ?: root.optJSONArray("items")
+                        ?: root.optJSONArray("results")
+                        ?: JSONArray()
                 }
                 val items = buildList {
                     for (i in 0 until array.length()) {
@@ -65,7 +71,22 @@ class ListingsRepository {
                         ))
                     }
                 }
-                ListingsPage(items, root.optInt("count", root.optInt("total", items.size)))
+                val pagination = root.optJSONObject("pagination") ?: root.optJSONObject("meta")
+                    ?: dataObject?.optJSONObject("pagination") ?: dataObject?.optJSONObject("meta")
+                val reportedTotal = root.optInt(
+                    "total_count",
+                    root.optInt(
+                        "totalCount",
+                        root.optInt(
+                            "total",
+                            pagination?.optInt("total", -1) ?: -1
+                        )
+                    )
+                ).takeIf { it >= 0 }
+                    ?: dataObject?.optInt("total_count", -1)?.takeIf { it >= 0 }
+                    ?: dataObject?.optInt("total", -1)?.takeIf { it >= 0 }
+                    ?: root.optInt("count", items.size)
+                ListingsPage(items, maxOf(reportedTotal, items.size))
             }
         }
     }
